@@ -1,0 +1,69 @@
+plugins {
+    id 'fabric-loom'
+}
+
+description = '人体周天光迹与内观表现，直接接入通用 UI 的客户端扩展。'
+
+def uiDirectory = rootProject.file(providers.gradleProperty('meridianUiAddonDir').getOrElse('../Kizuna-Meridian-UI-Addon'))
+def uiJar = new File(uiDirectory, 'client/build/libs/kizuna-meridian-ui-addon-client-0.1.0-SNAPSHOT.jar')
+def inventoryDirectory = rootProject.file(providers.gradleProperty('inventoryUiFrameworkDir').getOrElse('../Kizuna-Inventory-UI-Framework'))
+def inventoryJar = new File(inventoryDirectory, 'build/libs/kizuna-inventory-ui-framework-0.1.0-SNAPSHOT.jar')
+if (!uiJar.isFile() || !inventoryJar.isFile()) {
+    throw new GradleException('请先构建 Meridian UI Addon 与 Inventory UI Framework 客户端 JAR。')
+}
+
+dependencies {
+    minecraft 'com.mojang:minecraft:1.20.1'
+    mappings 'net.fabricmc:yarn:1.20.1+build.10:v2'
+    modImplementation 'net.fabricmc:fabric-loader:0.16.10'
+    modImplementation 'net.fabricmc.fabric-api:fabric-api:0.92.3+1.20.1'
+    modImplementation 'io.wispforest:owo-lib:0.11.2+1.20'
+    modImplementation files(uiJar, inventoryJar)
+    modImplementation('local.meridian-human:client') { transitive = false }
+    implementation 'local.meridian:client'
+    implementation 'local.meridian-human:shared'
+    modImplementation files('../../Kizuna-Meridian-Progression-Addon/client/build/libs/kizuna-meridian-progression-addon-client-0.1.0-SNAPSHOT.jar')
+    implementation files('../../Kizuna-Meridian-Progression-Addon/shared/build/libs/kizuna-meridian-progression-addon-shared-0.1.0-SNAPSHOT.jar')
+    testImplementation 'junit:junit:4.13.2'
+    testImplementation 'local.meridian-human:server'
+}
+
+test { useJUnit() }
+processResources {
+    inputs.property 'version', project.version
+    filesMatching('fabric.mod.json') { expand version: project.version }
+}
+
+apply from: '../../Kizuna-Meridian-Mod-Framework/scripts/full-assembly.gradle'
+
+// 真实客户端验收单独装配可信出生样例，生产模块不依赖人体服务端。
+sourceSets {
+    smoke {
+        compileClasspath += sourceSets.main.output + sourceSets.main.compileClasspath
+        runtimeClasspath += sourceSets.main.output + sourceSets.main.runtimeClasspath
+    }
+}
+dependencies {
+    smokeImplementation 'local.meridian-human:server'
+    smokeImplementation 'local.meridian:server'
+    // 验收代码用 named API 编译；运行依赖仍只由 full-assembly 重映射并装入一次。
+    smokeCompileOnly files('../../Kizuna-Meridian-Human-Addon/fabric/build/devlibs/kizuna-meridian-human-addon-fabric-0.1.0-SNAPSHOT-dev.jar')
+    smokeCompileOnly files('../../Kizuna-Meridian-Progression-Addon/fabric/build/devlibs/kizuna-meridian-progression-addon-fabric-0.1.0-SNAPSHOT-dev.jar')
+    smokeCompileOnly files('../../Kizuna-Inventory-UI-Framework/server/build/devlibs/kizuna-inventory-ui-framework-server-0.1.0-SNAPSHOT-dev.jar')
+}
+loom {
+    mods {
+        meridian_human_ui { sourceSet sourceSets.main }
+        meridian_human_ui_smoke { sourceSet sourceSets.smoke }
+    }
+    runs {
+        smoke {
+            client()
+            source sourceSets.smoke
+            runDir 'build/smoke'
+            property 'kiui.smoke', 'true'
+            property 'meridian.openingEffectsSmoke', providers.gradleProperty('openingEffectsSmoke').getOrElse('false')
+            programArgs '--width', '1440', '--height', '1000'
+        }
+    }
+}

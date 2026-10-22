@@ -1,0 +1,23 @@
+{
+  "schemaVersion": 1,
+  "id": "meridian_human_ui",
+  "version": "${version}",
+  "name": "Kizuna's Meridian Human UI Addon",
+  "description": "人体周天光迹与内观表现",
+  "authors": ["Kizunad"],
+  "license": "PolyForm-Noncommercial-1.0.0",
+  "environment": "client",
+  "entrypoints": {
+    "meridian_ui_opening_effects": ["dev.kizuna.meridian.human.ui.HumanOpeningEffects"],
+    "meridian_ui_routes": ["dev.kizuna.meridian.human.ui.HumanMeridianRoutes"],
+    "meridian_ui_scene": ["dev.kizuna.meridian.human.ui.HumanCultivationPanel"]
+  },
+  "depends": {
+    "java": ">=17",
+    "minecraft": "1.20.1",
+    "fabricloader": ">=0.16.10",
+    "meridian_human": "0.1.0-SNAPSHOT",
+    "meridian_ui": "0.1.0-SNAPSHOT",
+    "meridian_progression_client": "*"
+  }
+}

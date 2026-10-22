@@ -1,0 +1,38 @@
+plugins {
+    id 'base'
+    id 'fabric-loom' version '1.6-SNAPSHOT' apply false
+}
+
+allprojects {
+    group = 'dev.kizuna.meridian.human.ui'
+    version = '0.1.0-SNAPSHOT'
+}
+
+subprojects {
+    apply plugin: 'java-library'
+    repositories {
+        maven { url = 'https://maven.fabricmc.net/' }
+        maven { url = 'https://maven.wispforest.io/releases' }
+        mavenCentral()
+    }
+    java {
+        toolchain { languageVersion = JavaLanguageVersion.of(17) }
+    }
+    base.archivesName = "${rootProject.name}-${project.name}"
+    tasks.withType(JavaCompile).configureEach {
+        options.release = 17
+        options.encoding = 'UTF-8'
+    }
+    tasks.withType(JavaExec).configureEach {
+        // 游戏验证与正式编译统一使用 Java 17。
+        javaLauncher = javaToolchains.launcherFor { languageVersion = JavaLanguageVersion.of(17) }
+    }
+    tasks.withType(Jar).configureEach {
+        from(rootProject.files('LICENSE', 'NOTICE', 'THIRD_PARTY_NOTICES.md'))
+    }
+}
+
+tasks.named('assemble') { dependsOn ':client:assemble' }
+tasks.named('check') { dependsOn ':client:check' }
+tasks.named('clean') { dependsOn ':client:clean' }
+tasks.register('test') { group = 'verification'; dependsOn ':client:test' }

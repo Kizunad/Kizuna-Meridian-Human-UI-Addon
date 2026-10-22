@@ -1,0 +1,10 @@
+{
+  "schemaVersion": 1,
+  "id": "meridian_human_ui_smoke",
+  "version": "1.0.0",
+  "name": "Human UI Client Smoke",
+  "environment": "client",
+  "entrypoints": {
+    "client": ["dev.kizuna.meridian.human.ui.smoke.HumanOpeningSmoke"]
+  }
+}

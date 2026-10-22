@@ -1,0 +1,25 @@
+pluginManagement {
+    repositories {
+        maven { url = 'https://maven.fabricmc.net/' }
+        gradlePluginPortal()
+        mavenCentral()
+    }
+}
+
+rootProject.name = 'kizuna-meridian-human-ui-addon'
+include 'client'
+
+// 人体模型与协议从各自独立仓库构建；UI 使用已重映射的客户端安装产物。
+includeBuild('../Kizuna-Meridian-Human-Addon') {
+    dependencySubstitution {
+        substitute module('local.meridian-human:client') using project(':client')
+        substitute module('local.meridian-human:server') using project(':server')
+        substitute module('local.meridian-human:shared') using project(':shared')
+    }
+}
+includeBuild(providers.gradleProperty('meridianFrameworkDir').getOrElse('../Kizuna-Meridian-Mod-Framework')) {
+    dependencySubstitution {
+        substitute module('local.meridian:client') using project(':client')
+        substitute module('local.meridian:server') using project(':server')
+    }
+}
