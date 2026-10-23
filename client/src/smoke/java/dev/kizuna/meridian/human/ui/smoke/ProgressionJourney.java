@@ -35,7 +35,7 @@ import java.util.function.Consumer;
 
 /** 完整整合服回归：真实拾取、物品右键、统一协议、保存重启和管理员撤权。 */
 final class ProgressionJourney {
-    private enum Stage { CREATE, LOCKED, PICKUP, CANCEL, CANCELLED, EARLY, REJECTED, READ,
+    private enum Stage { CREATE, LOCKED, PICKUP, CANCEL, CANCELLED, EARLY, COMPLETED, READ,
         READING, LOCKED_MENU, NEW_SCROLL_SETUP, NEW_SCROLL_OPEN, NEW_SCROLL_READING, NEW_SCROLL_MENU, RESTORE_NOTES,
         UNLOCKED, RUNNING, RESET_READING, RESET, RESET_DONE, RESTORE, RESTART, REJOIN, DEAD, RESPAWN, DONE }
     private final String world = "progression-smoke-" + System.currentTimeMillis();
@@ -55,7 +55,7 @@ final class ProgressionJourney {
     private final ManualBreathingJourney manualBreathing = new ManualBreathingJourney();
 
     boolean tick(MinecraftClient client, BodyUiModule module) throws Exception {
-        // 每一阶段等待真实权威或屏幕事实；不写客户端解锁状态，也不替换服务端计时器。
+        // 每一阶段等待真实权威或屏幕事实；右键解锁与播放结束分别验证。
         if (Util.getMeasuringTimeMs() > deadline) {
             throw new IllegalStateException("残卷闭环超时：" + stage + " / " + InventoryUiClient.runtime().protocolError());
         }
@@ -126,6 +126,7 @@ final class ProgressionJourney {
                 if (ticks < 60) {
                     return false;
                 }
+                require(ClientProgression.canCultivate(), "真实右键未立即解锁札记");
                 audio.body(client);
                 oldToken = screen.sessionId();
                 screen.keyPressed(org.lwjgl.glfw.GLFW.GLFW_KEY_ESCAPE, 0, 0);
@@ -136,7 +137,7 @@ final class ProgressionJourney {
                 if (ticks < 10) {
                     return false;
                 }
-                require(!ClientProgression.canCultivate(), "中途关卷误解锁");
+                require(ClientProgression.canCultivate(), "中途关卷撤销了右键解锁");
                 audio.ended(client, false);
                 use(client);
                 next(Stage.EARLY);
@@ -146,13 +147,13 @@ final class ProgressionJourney {
                     return false;
                 }
                 finish(screen.sessionId());
-                next(Stage.REJECTED);
+                next(Stage.COMPLETED);
             }
-            case REJECTED -> {
+            case COMPLETED -> {
                 if (client.currentScreen instanceof ScrollScreen || ticks < 10) {
                     return false;
                 }
-                require(!ClientProgression.canCultivate(), "过早提交误解锁");
+                require(ClientProgression.canCultivate(), "立即完成播放撤销了右键解锁");
                 audio.begin(client);
                 use(client);
                 next(Stage.READ);
@@ -172,11 +173,11 @@ final class ProgressionJourney {
                     ScreenshotRecorder.saveScreenshot(client.runDirectory, "qi-notes-reading.png", client.getFramebuffer(), ignored -> {});
                     DesktopKeyboard.space(true);
                 }
-                if (!ClientProgression.canCultivate()) {
+                if (client.currentScreen instanceof ScrollScreen) {
                     return false;
                 }
                 DesktopKeyboard.space(false);
-                require(!(client.currentScreen instanceof ScrollScreen), "解锁后卷轴未关闭");
+                require(ClientProgression.canCultivate(), "完整播放后丢失解锁");
                 require(holdingScroll(client), "阅读错误消耗残卷");
                 server(client, player -> {
                     require(ProgressionFabric.canCultivate(player), "客户端解锁未写身体");
@@ -234,11 +235,13 @@ final class ProgressionJourney {
                 }
                 boolean read = newScroll == 0 ? ClientProgression.requireProgress().getGatheringScrollRead()
                         : ClientProgression.requireProgress().getMiddleJiaoScrollRead();
-                if (!read) {
+                if (!read || ticks < 90) {
                     return false;
                 }
                 DesktopKeyboard.space(false);
-                require(!(client.currentScreen instanceof ScrollScreen), "新残卷解锁后仍在播放");
+                require(client.currentScreen instanceof ScrollScreen, "即时解锁意外关闭了新卷画面");
+                // 未播放完直接关闭，后续菜单仍须出现本卷授予的入口。
+                client.currentScreen.close();
                 next(Stage.NEW_SCROLL_MENU);
             }
             case NEW_SCROLL_MENU -> {

@@ -42,7 +42,7 @@ public final class HumanCultivationPanel implements MeridianSceneExtension {
     public String lockedReason() {
         // 客户端提示不代替服务端拦截；本卷同时解锁手动和自动。
         return dev.kizuna.meridian.progression.client.ClientProgression.canUseMiddleJiao()
-                ? "" : "还没读过「中焦残卷」。去找到「中焦残卷」，右键读完，就能使用中焦周天和「自动」。";
+                ? "" : "还没使用过「中焦残卷」。找到后右键一次，就能使用中焦周天和「自动」，无须看完。";
     }
 
     @Override
