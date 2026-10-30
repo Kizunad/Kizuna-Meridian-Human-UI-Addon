@@ -1,6 +1,6 @@
 plugins {
     id 'base'
-    id 'fabric-loom' version '1.6-SNAPSHOT' apply false
+    alias(libs.plugins.fabric.loom) apply false
 }
 
 allprojects {
@@ -16,16 +16,16 @@ subprojects {
         mavenCentral()
     }
     java {
-        toolchain { languageVersion = JavaLanguageVersion.of(17) }
+        toolchain { languageVersion = JavaLanguageVersion.of(libs.versions.java.get()) }
     }
     base.archivesName = "${rootProject.name}-${project.name}"
     tasks.withType(JavaCompile).configureEach {
-        options.release = 17
+        options.release = libs.versions.java.get().toInteger()
         options.encoding = 'UTF-8'
     }
     tasks.withType(JavaExec).configureEach {
         // 游戏验证与正式编译统一使用 Java 17。
-        javaLauncher = javaToolchains.launcherFor { languageVersion = JavaLanguageVersion.of(17) }
+        javaLauncher = javaToolchains.launcherFor { languageVersion = JavaLanguageVersion.of(libs.versions.java.get()) }
     }
     tasks.withType(Jar).configureEach {
         from(rootProject.files('LICENSE', 'NOTICE', 'THIRD_PARTY_NOTICES.md'))

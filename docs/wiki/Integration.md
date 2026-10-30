@@ -31,9 +31,9 @@ smoke 启动时删除运行目录中的吐纳指引已读偏好，按新玩家�
 
 2026-10-20 已在完整装配的真实单机整合服通过，三个标记 `CULTIVATION_JOURNEY_OK`、`PROGRESSION_JOURNEY_OK`、`HUMAN_UI_SMOKE_OK` 均出现。成功相变实际连续运行60模拟秒，没有用调试指令设置境界或成功进度；另测中断清零、不退已耗燃料。验收还定位并修复了活动同tick重复提交造成伤害版本冲突的问题。
 
-默认工作区中，本仓与 Human、UI、Framework、Inventory UI 四个独立仓库同级。使用 Java 17；UI 和 Inventory UI 的 Minecraft 客户端依赖采用已构建安装 JAR，由 Loom 重映射。Human 与 Framework 通过 composite build 读取实际源码，不复制协议或模型。
+默认工作区中，本仓与 Human、UI、Progression、Framework、Inventory UI 等独立仓库同级，位置由 Framework 的 `scripts/workspace.gradle` 按装配清单提供，单个仓库可用 `-Pkizuna.dir.<清单 id>=<目录>` 改指。产物面向 Java 17；Gradle 8.14.6 与 Loom 1.13.6 本身需要 JDK 21 运行。这些仓库都通过 composite build 组合实际源码，编译取上游的 named 开发 JAR 并随本仓先行构建，不复制协议或模型。
 
-先构建 Inventory UI Framework。UI 与本包的编译、运行依赖分开装配：先在 UI 仓执行 `./gradlew :client:remapJar` 生成通用接口所在 JAR，再在本仓执行完整构建，最后回 UI 仓执行 `./gradlew build`。这也适用于首次构建或修改路线接口，不需要省略必需运行依赖的配置开关。在本仓验证：
+编译依赖随组合构建先行构建，不再需要先在 UI 仓打 JAR。开发运行的完整装配里，未以源码组合的仓库仍按清单读取安装产物，需事先构建。在本仓验证：
 
 ```bash
 ./gradlew build --offline --console=plain --no-watch-fs
@@ -43,9 +43,9 @@ xvfb-run -a ./gradlew :client:runSmoke --offline --console=plain --no-watch-fs
 
 离线命令要求依赖已缓存，首次构建可去掉 `--offline`。Windows 使用 `gradlew.bat`，图形桌面直接执行 `:client:runSmoke`，无需 Xvfb。开发运行统一应用 Framework 的 `scripts/full-assembly.gradle`，固定装配 Meridian 九仓（含 Progression 和 Players-Animation）及 Inventory UI、BS3D 的 client/common 安装产物，不提供安装开关。源码依赖位置与必装关系是不同概念。
 
-本轮要求 UI checkout 已提供 `dev.kizuna.meridian.ui.api.MeridianRouteProvider`；修改该接口后必须先重建 UI JAR，再构建本包。`local.meridian-human:*` 和 `local.meridian:*` 是本地替换键，不是已发布的 Maven 坐标。
+本轮要求 UI checkout 已提供 `dev.kizuna.meridian.ui.api.MeridianRouteProvider`；组合构建直接编译 UI 当前源码。`local.meridian:*` 和 `local.progression:*` 是本地替换键；Human、UI 与 Inventory UI 的替换键用各自工程的 group 与工程名，同样不是已发布的 Maven 坐标。
 
-安装产物为 `client/build/libs/kizuna-meridian-human-ui-addon-client-0.1.0-SNAPSHOT.jar`。Meridian 各 Addon 按适用端整套安装；真实玩家由 Human Fabric 权威宿主提供身体快照。本包不内嵌任何依赖，`fabric.mod.json` 强制声明 `meridian_human` 与 `meridian_ui`，UI 也强制声明 `meridian_human_ui`；Gradle 用 `modImplementation` 编译 Human/UI，共享脚本用 `modLocalRuntime` 装配其他模组。开发装配不沿 composite 发布变体传递，避免其他工程重复加载当前工程的安装 JAR。缺包由 Loader 拒绝启动，客户端路线必须唯一装配且返回有效坐标。本仓仅客户端产物，不安装到专服。
+安装产物为 `client/build/libs/kizuna-meridian-human-ui-addon-client-0.1.0-SNAPSHOT.jar`。Meridian 各 Addon 按适用端整套安装；真实玩家由 Human Fabric 权威宿主提供身体快照。本包不内嵌任何依赖，`fabric.mod.json` 强制声明 `meridian_human` 与 `meridian_ui`，UI 也强制声明 `meridian_human_ui`；Gradle 以组合工程的 named 开发 JAR 编译 UI、Inventory UI 与 Progression，人体展示包作为普通库直接依赖；共享脚本用 `modLocalRuntime` / `localRuntime` 按替换坐标或安装产物装配其他模组。开发装配不沿 composite 发布变体传递，避免其他工程重复加载当前工程的安装 JAR。缺包由 Loader 拒绝启动，客户端路线必须唯一装配且返回有效坐标。本仓仅客户端产物，不安装到专服。
 
 `HumanMeridianRoutesTest` 使用 Human 实际模板与成品模型，验证全部人体连接有路线、四条专属连接、左右镜像、人中交汇、坐标边界、只读结果及无效绑定拒绝。旧同侧连接按实际端点展示，不迁移成新拓扑。UI 整体回归覆盖路线绘制、坏路径、缺连接和境界隐藏，不保留缺少 Human-UI 的测试或 smoke。
 

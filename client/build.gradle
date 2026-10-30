@@ -4,28 +4,32 @@ plugins {
 
 description = '人体周天光迹与内观表现，直接接入通用 UI 的客户端扩展。'
 
-def uiDirectory = rootProject.file(providers.gradleProperty('meridianUiAddonDir').getOrElse('../Kizuna-Meridian-UI-Addon'))
-def uiJar = new File(uiDirectory, 'client/build/libs/kizuna-meridian-ui-addon-client-0.1.0-SNAPSHOT.jar')
-def inventoryDirectory = rootProject.file(providers.gradleProperty('inventoryUiFrameworkDir').getOrElse('../Kizuna-Inventory-UI-Framework'))
-def inventoryJar = new File(inventoryDirectory, 'build/libs/kizuna-inventory-ui-framework-0.1.0-SNAPSHOT.jar')
-if (!uiJar.isFile() || !inventoryJar.isFile()) {
-    throw new GradleException('请先构建 Meridian UI Addon 与 Inventory UI Framework 客户端 JAR。')
-}
-
 dependencies {
-    minecraft 'com.mojang:minecraft:1.20.1'
-    mappings 'net.fabricmc:yarn:1.20.1+build.10:v2'
-    modImplementation 'net.fabricmc:fabric-loader:0.16.10'
-    modImplementation 'net.fabricmc.fabric-api:fabric-api:0.92.3+1.20.1'
-    modImplementation 'io.wispforest:owo-lib:0.11.2+1.20'
-    modImplementation files(uiJar, inventoryJar)
-    modImplementation('local.meridian-human:client') { transitive = false }
+    minecraft libs.minecraft
+    mappings "net.fabricmc:yarn:${libs.versions.yarn.get()}:v2"
+    modImplementation libs.fabric.loader
+    modImplementation libs.fabric.api
+    modImplementation libs.owo
+    // 组合进来的 UI、Inventory UI 与 Progression 客户端模组取 named 开发 JAR 编译（上游随本仓先行构建）；
+    // 开发运行由完整装配按替换坐标装入，这里不再声明第二份。
+    compileOnly('dev.kizuna.meridian.ui:client') { targetConfiguration = 'namedElements' }
+    compileOnly('dev.kizuna.inventoryui:kizuna-inventory-ui-framework') { targetConfiguration = 'namedElements' }
+    compileOnly('local.progression:client') { targetConfiguration = 'namedElements' }
+    // 人体展示包是普通 Java 库，不在完整装配清单的运行模块里，由本仓直接装入。
+    implementation('dev.kizuna.meridian.human:client') { transitive = false }
     implementation 'local.meridian:client'
-    implementation 'local.meridian-human:shared'
-    modImplementation files('../../Kizuna-Meridian-Progression-Addon/client/build/libs/kizuna-meridian-progression-addon-client-0.1.0-SNAPSHOT.jar')
-    implementation files('../../Kizuna-Meridian-Progression-Addon/shared/build/libs/kizuna-meridian-progression-addon-shared-0.1.0-SNAPSHOT.jar')
-    testImplementation 'junit:junit:4.13.2'
-    testImplementation 'local.meridian-human:server'
+    implementation 'dev.kizuna.meridian.human:shared'
+    implementation 'local.progression:shared'
+    // 完整装配按坐标重映射 Human、Progression 等模组时，Loom 以真实坐标重新加入 Framework server 与 Progression server；
+    // 运行与测试类路径直接声明组合工程，冲突时才会解析到同一组合工程，而不是去外部仓库找不存在的发布坐标。
+    // Progression server 已由完整装配按替换坐标装入运行类路径，只需补测试类路径。
+    localRuntime 'local.meridian:server'
+    testRuntimeOnly 'local.meridian:server'
+    testRuntimeOnly 'local.progression:server'
+    testImplementation libs.junit4
+    testImplementation 'dev.kizuna.meridian.human:server'
+    // 单元测试直接使用 UI 的路线类型，测试类路径单独补上同一份 named JAR。
+    testImplementation('dev.kizuna.meridian.ui:client') { targetConfiguration = 'namedElements' }
 }
 
 test { useJUnit() }
@@ -34,7 +38,7 @@ processResources {
     filesMatching('fabric.mod.json') { expand version: project.version }
 }
 
-apply from: '../../Kizuna-Meridian-Mod-Framework/scripts/full-assembly.gradle'
+apply from: new File(kizunaWorkspace.directory('framework'), 'scripts/full-assembly.gradle')
 
 // 真实客户端验收单独装配可信出生样例，生产模块不依赖人体服务端。
 sourceSets {
@@ -44,12 +48,12 @@ sourceSets {
     }
 }
 dependencies {
-    smokeImplementation 'local.meridian-human:server'
+    smokeImplementation 'dev.kizuna.meridian.human:server'
     smokeImplementation 'local.meridian:server'
-    // 验收代码用 named API 编译；运行依赖仍只由 full-assembly 重映射并装入一次。
-    smokeCompileOnly files('../../Kizuna-Meridian-Human-Addon/fabric/build/devlibs/kizuna-meridian-human-addon-fabric-0.1.0-SNAPSHOT-dev.jar')
-    smokeCompileOnly files('../../Kizuna-Meridian-Progression-Addon/fabric/build/devlibs/kizuna-meridian-progression-addon-fabric-0.1.0-SNAPSHOT-dev.jar')
-    smokeCompileOnly files('../../Kizuna-Inventory-UI-Framework/server/build/devlibs/kizuna-inventory-ui-framework-server-0.1.0-SNAPSHOT-dev.jar')
+    // 验收代码用组合工程的 named 开发 JAR 编译；运行依赖仍只由 full-assembly 重映射并装入一次。
+    smokeCompileOnly('dev.kizuna.meridian.human:fabric') { targetConfiguration = 'namedElements' }
+    smokeCompileOnly('local.progression:fabric') { targetConfiguration = 'namedElements' }
+    smokeCompileOnly('dev.kizuna.inventoryui:server') { targetConfiguration = 'namedElements' }
 }
 loom {
     mods {

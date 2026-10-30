@@ -22,7 +22,7 @@ Framework、Human、UI、Items、Vanilla-Damage、Vanilla-Healing、Human-UI、P
 
 Fabric 工程统一应用 Framework 的 `scripts/full-assembly.gradle`。同级九仓及 Inventory UI、BS3D 的客户端/common 服务端产物固定加入运行类路径，不再用属性决定安装哪些模组。BS3D 客户端提供其服务端必需的握手消息模块。源码 composite 与运行安装产物各司其职；Loom 开发重映射会去掉嵌套库，因此脚本显式加入其他仓库的纯 Java 服务端库，Items 使用 named dev 库。使用 `modLocalRuntime` / `localRuntime` 将整套装配限定在当前工程，不沿 composite 发布变体再次传递安装 JAR。同仓 Progression 的另一个适用端通过 `builtBy` 声明 remap 产物依赖；运行前检查安装产物，缺文件明确报错。
 
-先构建各仓库的安装产物，再运行客户端或 GameTest。首次 UI/Human-UI 互相接线时，先构建 UI `:client:remapJar`，构建 Human-UI，再完成 UI 构建；不需要关闭必需依赖。具体命令见[构建、安装与验证](Integration.md)。
+先构建各仓库的安装产物，再运行客户端或 GameTest。Human-UI 以组合构建编译 UI，不再需要先打 UI JAR；UI 的开发运行仍按清单读取 Human-UI 安装产物，首次运行 UI 客户端前先构建 Human-UI。不需要关闭必需依赖。具体命令见[构建、安装与验证](Integration.md)。
 
 ## Items 与 Inventory UI
 
