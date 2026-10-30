@@ -36,6 +36,10 @@ public final class HumanOpeningSmoke implements ClientModInitializer {
     @Override
     public void onInitializeClient() {
         // 验收只在 smoke 源集中运行，失败退出游戏并保留 Gradle 堆栈。
+        if (Boolean.getBoolean("meridian.revivalSmoke")) {
+            new RevivalJourney().register();
+            return;
+        }
         if (Boolean.getBoolean("meridian.openingEffectsSmoke")) {
             new OpeningEffectsJourney().register();
             return;

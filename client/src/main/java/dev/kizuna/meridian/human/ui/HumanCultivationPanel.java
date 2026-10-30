@@ -1,7 +1,12 @@
 package dev.kizuna.meridian.human.ui;
 
-import dev.kizuna.meridian.human.pb.CultivationMessages.*;
-import dev.kizuna.meridian.protocol.pb.BodyMessages.*;
+import dev.kizuna.meridian.human.pb.CultivationMessages.CultivationInput;
+import dev.kizuna.meridian.human.pb.CultivationMessages.CultivationState;
+import dev.kizuna.meridian.protocol.pb.BodyMessages.BodySnapshot;
+import dev.kizuna.meridian.protocol.pb.BodyMessages.Connection;
+import dev.kizuna.meridian.protocol.pb.BodyMessages.Qi;
+import dev.kizuna.meridian.protocol.pb.BodyMessages.QiInventory;
+import dev.kizuna.meridian.protocol.pb.BodyMessages.QiTransit;
 import dev.kizuna.meridian.ui.api.MeridianSceneExtension;
 import dev.kizuna.meridian.ui.client.BodyCanvas;
 import dev.kizuna.meridian.ui.client.BodyScene;
@@ -43,6 +48,12 @@ public final class HumanCultivationPanel implements MeridianSceneExtension {
         // 客户端提示不代替服务端拦截；本卷同时解锁手动和自动。
         return dev.kizuna.meridian.progression.client.ClientProgression.canUseMiddleJiao()
                 ? "" : "还没使用过「中焦残卷」。找到后右键一次，就能使用中焦周天和「自动」，无须看完。";
+    }
+
+    @Override
+    public String bodySummary(BodySnapshot body) {
+        // 身体主界面与部位详情使用同一寿元行，随权威版本更新。
+        return HumanVitalityPresentation.summary(body);
     }
 
     @Override

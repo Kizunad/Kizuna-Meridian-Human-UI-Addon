@@ -63,6 +63,7 @@ loom {
             runDir 'build/smoke'
             property 'kiui.smoke', 'true'
             property 'meridian.openingEffectsSmoke', providers.gradleProperty('openingEffectsSmoke').getOrElse('false')
+            property 'meridian.revivalSmoke', providers.gradleProperty('revivalSmoke').getOrElse('false')
             programArgs '--width', '1440', '--height', '1000'
         }
     }
