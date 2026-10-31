@@ -94,7 +94,7 @@ final class OpeningEffectsJourney {
             case SETUP -> {
                 query(client, player -> {
                     command(player, "meridian progression unlock");
-                    command(player, "meridian purity set " + player.getScoreboardName() + " lumen all 18 0.01");
+                    command(player, "meridian qi set " + player.getScoreboardName() + " 18 all lumen 0.01");
                 });
                 next(Stage.OPEN);
             }
@@ -167,7 +167,7 @@ final class OpeningEffectsJourney {
                 if (ticks >= 60 && work == null) {
                     capture(client, "opening-05-stable.png");
                     query(client, player -> {
-                        command(player, "meridian purity set " + player.getScoreboardName() + " lumen all 33 0.01");
+                        command(player, "meridian qi set " + player.getScoreboardName() + " 33 all lumen 0.01");
                     });
                     next(Stage.REFILLED);
                 }
@@ -191,8 +191,8 @@ final class OpeningEffectsJourney {
                             .mapToDouble(state -> dev.kizuna.meridian.ui.client.QiDisplay.amount(state.getLumenQi())).sum();
                     double leftQi = 36.25 * .66 - otherQi;
                     require(leftQi > 0, "预警夹具无法保留正储量");
-                    query(client, player -> command(player, "meridian purity set " + player.getScoreboardName()
-                            + " lumen left_lung_meridian " + leftQi + " 0.01"));
+                    query(client, player -> command(player, "meridian qi set " + player.getScoreboardName()
+                            + " " + leftQi + " left_lung_meridian lumen 0.01"));
                     next(Stage.WARNING);
                 }
             }

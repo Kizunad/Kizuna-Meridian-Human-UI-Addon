@@ -110,7 +110,7 @@ final class BodyViewerJourney {
                     server.execute(() -> {
                         // 与管理员在游戏中执行同一命令树；命令按来源玩家找到身体并走权威事务。
                         var player = server.getPlayerList().getPlayer(playerId);
-                        server.getCommands().performPrefixedCommand(player.createCommandSourceStack().withPermission(4), "meridian zhenyuan fill");
+                        server.getCommands().performPrefixedCommand(player.createCommandSourceStack().withPermission(4), "meridian qi fill");
                     });
                     next(Stage.REFRESH);
                 }

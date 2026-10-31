@@ -184,7 +184,7 @@ final class ProgressionJourney {
                     require(ProgressionFabric.canCultivate(player), "客户端解锁未写身体");
                     BodySnapshot snapshot = inspect(player);
                     require(snapshot.getAddonProgressMap().containsKey(ProgressionProtocol.PROGRESS_KEY), "身体未保存进度");
-                    command(player, "meridian zhenyuan fill");
+                    command(player, "meridian qi fill");
                 });
                 require(!ClientProgression.canGather() && !ClientProgression.canUseMiddleJiao(), "札记错误代解锁两卷");
                 next(Stage.LOCKED_MENU);

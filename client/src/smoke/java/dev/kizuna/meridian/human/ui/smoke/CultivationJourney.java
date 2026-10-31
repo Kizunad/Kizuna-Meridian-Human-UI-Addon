@@ -51,7 +51,7 @@ final class CultivationJourney {
                     command(player, "meridian opening complete " + player.getScoreboardName() + " " + id);
                 }
                 // 登录后已有自然扩散在途，预留其真实返回体积，不能把库存单独灌到150元。
-                command(player, "meridian purity set " + player.getScoreboardName() + " lumen all 145 0.01");
+                command(player, "meridian qi set " + player.getScoreboardName() + " 145 all lumen 0.01");
             });
             next(Stage.OPEN);
             return false;
@@ -133,11 +133,11 @@ final class CultivationJourney {
                 }
                 if (!sentStart) {
                     // 高于90%沉淀线，同时给停周天后重新启动的自然扩散留下预约空间。
-                    query(client, player -> command(player, "meridian purity set " + player.getScoreboardName() + " lumen all 1400 0.099"));
+                    query(client, player -> command(player, "meridian qi set " + player.getScoreboardName() + " 1400 all lumen 0.099"));
                     sentStart = true;
                 } else if (wall() > .05) {
                     wallBefore = wall();
-                    query(client, player -> command(player, "meridian purity set " + player.getScoreboardName() + " lumen all 80 0.099"));
+                    query(client, player -> command(player, "meridian qi set " + player.getScoreboardName() + " 80 all lumen 0.099"));
                     send(CultivationInput.Operation.MOBILIZE_ON);
                     next(Stage.MOBILIZE);
                 }
@@ -163,7 +163,7 @@ final class CultivationJourney {
                     automaticCaptured = true;
                 }
                 if (!sentStart) {
-                    query(client, player -> command(player, "meridian purity set " + player.getScoreboardName() + " wall all 61 0.099"));
+                    query(client, player -> command(player, "meridian qi set " + player.getScoreboardName() + " 61 all wall 0.099"));
                     sentStart = true;
                 } else if (wall() >= 60) {
                     send(CultivationInput.Operation.START_BREAKTHROUGH);
@@ -194,7 +194,7 @@ final class CultivationJourney {
                 if (brainRatio() < .97) {
                     require(ticks < 4800, "停周天四分钟后脑耐力仍未恢复：" + brainRatio());
                 } else if (!sentStart) {
-                    query(client, player -> command(player, "meridian purity set " + player.getScoreboardName() + " lumen all 80 0.099"));
+                    query(client, player -> command(player, "meridian qi set " + player.getScoreboardName() + " 80 all lumen 0.099"));
                     sentStart = true;
                 } else {
                     send(CultivationInput.Operation.START_AUTOMATIC);
