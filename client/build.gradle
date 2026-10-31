@@ -1,33 +1,35 @@
 plugins {
-    id 'fabric-loom'
+    id 'net.fabricmc.fabric-loom'
 }
 
 description = '人体周天光迹与内观表现，直接接入通用 UI 的客户端扩展。'
 
 dependencies {
+    // 26.x 不混淆：直接用官方名编译，没有映射，模组依赖也不经重映射。
     minecraft libs.minecraft
-    mappings loom.officialMojangMappings()
-    modImplementation libs.fabric.loader
-    modImplementation libs.fabric.api
-    modImplementation libs.owo
-    // 组合进来的 UI、Inventory UI 与 Progression 客户端模组取 named 开发 JAR 编译（上游随本仓先行构建）；
+    implementation libs.fabric.loader
+    implementation libs.fabric.api
+    implementation libs.owo
+    // 组合进来的 UI、Inventory UI 与 Progression 客户端模组直接取其普通 JAR 编译（上游随本仓先行构建）；
     // 开发运行由完整装配按替换坐标装入，这里不再声明第二份。
-    compileOnly('dev.kizuna.meridian.ui:client') { targetConfiguration = 'namedElements' }
-    compileOnly('dev.kizuna.inventoryui:kizuna-inventory-ui-framework') { targetConfiguration = 'namedElements' }
-    compileOnly('dev.kizuna.meridian.progression:client') { targetConfiguration = 'namedElements' }
+    compileOnly 'dev.kizuna.meridian.ui:client'
+    compileOnly 'dev.kizuna.inventoryui:kizuna-inventory-ui-framework'
+    compileOnly 'dev.kizuna.meridian.progression:client'
+    // 修炼通道只在 Human 的 Fabric 模组 HumanChannels 定义一份，字节通道类型来自 Framework 的 Fabric 模组。
+    compileOnly 'dev.kizuna.meridian.human:fabric'
+    compileOnly 'dev.kizuna.meridian:fabric'
     // 人体展示包是普通 Java 库，不在完整装配清单的运行模块里，由本仓直接装入。
     implementation('dev.kizuna.meridian.human:client') { transitive = false }
     implementation 'local.meridian:client'
     implementation 'dev.kizuna.meridian.human:shared'
     implementation 'dev.kizuna.meridian.progression:shared'
-    // 完整装配按坐标重映射 Human、Progression 等模组时，Loom 以真实坐标重新加入 Framework server；Framework 的替换键仍是
-    // local.meridian，运行与测试类路径直接声明组合工程，冲突时才会解析到同一组合工程，而不是去外部仓库找不存在的发布坐标。
+    // Framework server 按 settings 中的本地替换键解析到组合工程，运行与测试类路径直接声明。
     localRuntime 'local.meridian:server'
     testRuntimeOnly 'local.meridian:server'
     testImplementation libs.junit4
     testImplementation 'dev.kizuna.meridian.human:server'
-    // 单元测试直接使用 UI 的路线类型，测试类路径单独补上同一份 named JAR。
-    testImplementation('dev.kizuna.meridian.ui:client') { targetConfiguration = 'namedElements' }
+    // 单元测试直接使用 UI 的路线类型，测试类路径单独补上同一份 JAR。
+    testImplementation 'dev.kizuna.meridian.ui:client'
 }
 
 test { useJUnit() }
@@ -48,10 +50,9 @@ sourceSets {
 dependencies {
     smokeImplementation 'dev.kizuna.meridian.human:server'
     smokeImplementation 'local.meridian:server'
-    // 验收代码用组合工程的 named 开发 JAR 编译；运行依赖仍只由 full-assembly 重映射并装入一次。
-    smokeCompileOnly('dev.kizuna.meridian.human:fabric') { targetConfiguration = 'namedElements' }
-    smokeCompileOnly('dev.kizuna.meridian.progression:fabric') { targetConfiguration = 'namedElements' }
-    smokeCompileOnly('dev.kizuna.inventoryui:server') { targetConfiguration = 'namedElements' }
+    // 验收代码直接用组合工程的普通 JAR 编译（Human fabric 已在主源集编译类路径上）；运行依赖仍只由完整装配装入一次。
+    smokeCompileOnly 'dev.kizuna.meridian.progression:fabric'
+    smokeCompileOnly 'dev.kizuna.inventoryui:server'
 }
 loom {
     mods {

@@ -14,7 +14,6 @@ import net.minecraft.client.gui.screens.AccessibilityOnboardingScreen;
 import net.minecraft.client.gui.screens.TitleScreen;
 import net.minecraft.core.registries.Registries;
 import net.minecraft.world.Difficulty;
-import net.minecraft.world.level.GameRules;
 import net.minecraft.world.level.GameType;
 import net.minecraft.world.level.LevelSettings;
 import net.minecraft.world.level.WorldDataConfiguration;
@@ -30,7 +29,6 @@ final class RevivalJourney {
     private static final int NORMAL_SCALE = 2;
     private static final int LARGE_SCALE = 3;
     private static final long WORLD_SEED = 5;
-    private static final int OP_LEVEL = 4;
     private enum Stage { CREATE, UNLOCK, INITIAL, DIE, RESPAWN, REVIVED, LARGE, DONE }
     private Stage stage = Stage.CREATE;
     private int totalTicks;
@@ -45,10 +43,10 @@ final class RevivalJourney {
     private void tick(Minecraft client) {
         // 创建真实世界并等待服务器投影，不注入展示快照或修改身体账本。
         checkState(++totalTicks < TIMEOUT_TICKS, "复活界面验收超时：" + stage);
-        if (client.screen instanceof AccessibilityOnboardingScreen) {
-            client.setScreen(new TitleScreen());
+        if (client.gui.screen() instanceof AccessibilityOnboardingScreen) {
+            client.gui.setScreen(new TitleScreen());
         }
-        if (stage == Stage.CREATE && client.screen instanceof TitleScreen && client.getOverlay() == null) {
+        if (stage == Stage.CREATE && client.gui.screen() instanceof TitleScreen && client.gui.overlay() == null) {
             createWorld(client);
             return;
         }
@@ -74,7 +72,7 @@ final class RevivalJourney {
             }
             case INITIAL -> initial(client);
             case DIE -> {
-                client.setScreen(null);
+                client.gui.setScreen(null);
                 command(client, "kill @s");
                 next(Stage.RESPAWN);
             }
@@ -88,13 +86,15 @@ final class RevivalJourney {
     private void createWorld(Minecraft client) {
         // 固定种子平坦世界保持启动开销小，仍使用正式玩家与健康宿主。
         String world = "revival-" + System.currentTimeMillis();
-        var info = new LevelSettings(world, GameType.SURVIVAL, false /* hardcore */, Difficulty.PEACEFUL,
-                true /* allowCommands */, new GameRules(), WorldDataConfiguration.DEFAULT);
+        var info = new LevelSettings(world, GameType.SURVIVAL,
+                new LevelSettings.DifficultySettings(Difficulty.PEACEFUL, false /* hardcore */, false /* locked */),
+                true /* allowCommands */, WorldDataConfiguration.DEFAULT);
         var options = new WorldOptions(WORLD_SEED, false /* structures */, false /* bonusChest */);
         next(Stage.UNLOCK);
         client.createWorldOpenFlows().createFreshLevel(world, info, options,
-                registry -> registry.registryOrThrow(Registries.WORLD_PRESET).getOrThrow(WorldPresets.FLAT)
-                        .createWorldDimensions());
+                registry -> registry.lookupOrThrow(Registries.WORLD_PRESET).getOrThrow(WorldPresets.FLAT).value()
+                        .createWorldDimensions(),
+                new TitleScreen());
     }
 
     private void initial(Minecraft client) {
@@ -115,7 +115,7 @@ final class RevivalJourney {
         // 通过客户端重生包进入原版玩家替换与 Human AFTER_RESPAWN。
         if (client.player.isDeadOrDying()) {
             client.player.respawn();
-            client.setScreen(null);
+            client.gui.setScreen(null);
             next(Stage.REVIVED);
         }
     }
@@ -126,7 +126,7 @@ final class RevivalJourney {
                 || module.snapshot().getVitality().getSpentLifespanSeconds() == 0) {
             return;
         }
-        if (module.panel() == null || !(client.screen instanceof WorkspaceScreen)) {
+        if (module.panel() == null || !(client.gui.screen() instanceof WorkspaceScreen)) {
             open(client);
             return;
         }
@@ -136,7 +136,7 @@ final class RevivalJourney {
         verify("年龄 / 寿元：18.0 年 / 61.0 年");
         capture(client, "revival-after-scale-2.png");
         client.options.guiScale().set(LARGE_SCALE);
-        client.resizeDisplay();
+        client.resizeGui();
         next(Stage.LARGE);
     }
 
@@ -155,7 +155,7 @@ final class RevivalJourney {
     private void open(Minecraft client) {
         // 使用玩家实际打开检视的入口，保留授权和订阅检查。
         client.options.guiScale().set(NORMAL_SCALE);
-        client.resizeDisplay();
+        client.resizeGui();
         InventoryUiClient.runtime().openWorkspace();
         InventoryUiClient.runtime().open("meridian_ui:body", null);
         ticks = 0;
@@ -173,16 +173,14 @@ final class RevivalJourney {
         var id = client.player.getUUID();
         server.execute(() -> {
             var player = server.getPlayerList().getPlayer(id);
-            int result = server.getCommands().performPrefixedCommand(
-                    player.createCommandSourceStack().withPermission(OP_LEVEL), command);
-            checkState(result == 1, "验收命令失败：" + command);
+            checkState(UiChecks.runCommand(player, command) == 1, "验收命令失败：" + command);
         });
     }
 
     private static void capture(Minecraft client, String name) {
         // 保存真实帧缓冲，组件文字断言独立于截图。
-        checkState(client.screen instanceof WorkspaceScreen, "检视工作区没有实际显示");
-        Screenshot.grab(client.gameDirectory, name, client.getMainRenderTarget(), ignored -> {});
+        checkState(client.gui.screen() instanceof WorkspaceScreen, "检视工作区没有实际显示");
+        Screenshot.grab(client.gameDirectory, name, client.gameRenderer.mainRenderTarget(), 1, ignored -> {});
     }
 
     private void next(Stage next) {

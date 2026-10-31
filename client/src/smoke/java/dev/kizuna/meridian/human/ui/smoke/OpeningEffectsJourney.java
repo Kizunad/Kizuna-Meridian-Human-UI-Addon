@@ -9,7 +9,7 @@ import dev.kizuna.meridian.protocol.pb.HealthHostMessages.*;
 import dev.kizuna.meridian.protocol.pb.BreathingMessages.*;
 import dev.kizuna.meridian.ui.client.BodyUiModule;
 import dev.kizuna.meridian.ui.client.EffectSettings;
-import io.wispforest.owo.ui.core.Component;
+import io.wispforest.owo.ui.core.UIComponent;
 import net.fabricmc.fabric.api.client.event.lifecycle.v1.ClientTickEvents;
 import net.fabricmc.loader.api.FabricLoader;
 import net.minecraft.client.Minecraft;
@@ -18,8 +18,8 @@ import net.minecraft.client.gui.screens.AccessibilityOnboardingScreen;
 import net.minecraft.client.gui.screens.TitleScreen;
 import net.minecraft.core.registries.Registries;
 import net.minecraft.server.level.ServerPlayer;
+import net.minecraft.util.ARGB;
 import net.minecraft.world.*;
-import net.minecraft.world.level.GameRules;
 import net.minecraft.world.level.GameType;
 import net.minecraft.world.level.LevelSettings;
 import net.minecraft.world.level.WorldDataConfiguration;
@@ -64,19 +64,21 @@ final class OpeningEffectsJourney {
         if (++totalTicks > 6000) {
             throw new IllegalStateException("正常开脉超时：" + stage + " / " + (body == null ? "" : body.getOpeningTask()));
         }
-        if (client.screen instanceof AccessibilityOnboardingScreen) {
-            client.setScreen(new TitleScreen());
+        if (client.gui.screen() instanceof AccessibilityOnboardingScreen) {
+            client.gui.setScreen(new TitleScreen());
         }
-        if (module == null && client.getOverlay() == null) {
+        if (module == null && client.gui.overlay() == null) {
             module = FabricLoader.getInstance().getEntrypoints("kizuna_inventory_ui", ClientModule.class).stream()
                     .filter(BodyUiModule.class::isInstance).map(BodyUiModule.class::cast).findFirst().orElseThrow();
         }
-        if (stage == Stage.CREATE && client.screen instanceof TitleScreen && client.getOverlay() == null) {
-            var info = new LevelSettings(world, GameType.SURVIVAL, false, Difficulty.PEACEFUL, true,
-                    new GameRules(), WorldDataConfiguration.DEFAULT);
+        if (stage == Stage.CREATE && client.gui.screen() instanceof TitleScreen && client.gui.overlay() == null) {
+            var info = new LevelSettings(world, GameType.SURVIVAL,
+                    new LevelSettings.DifficultySettings(Difficulty.PEACEFUL, false /* hardcore */, false /* locked */),
+                    true /* allowCommands */, WorldDataConfiguration.DEFAULT);
             next(Stage.SETUP);
             client.createWorldOpenFlows().createFreshLevel(world, info, new WorldOptions(5, false, false),
-                    registry -> registry.registryOrThrow(Registries.WORLD_PRESET).getOrThrow(WorldPresets.FLAT).createWorldDimensions());
+                    registry -> registry.lookupOrThrow(Registries.WORLD_PRESET).getOrThrow(WorldPresets.FLAT).value().createWorldDimensions(),
+                    new TitleScreen());
             return;
         }
         if (client.player == null || !ClientProgression.synchronizedWithServer()) {
@@ -103,11 +105,11 @@ final class OpeningEffectsJourney {
                     return;
                 }
                 client.options.guiScale().set(2);
-                client.resizeDisplay();
+                client.resizeGui();
                 InventoryUiClient.runtime().openWorkspace();
                 InventoryUiClient.runtime().open("meridian_ui:meridians", null);
                 InventoryUiClient.runtime().open("meridian_ui:cultivation", null);
-                org.lwjgl.glfw.GLFW.glfwFocusWindow(client.getWindow().getWindow());
+                org.lwjgl.glfw.GLFW.glfwFocusWindow(client.getWindow().handle());
                 next(Stage.START);
             }
             case START -> {
@@ -227,10 +229,11 @@ final class OpeningEffectsJourney {
             }
             case FAILED -> {
                 if (ticks == 5) {
-                    require(redPixels(client) > 10, "权威暂停后，GPU没有显示暗红回退");
+                    requireRedPixels(client);
                     capture(client, "opening-07-interrupted.png");
                 }
-                if (ticks >= 55 && work == null) {
+                // 暗红回退的像素回读判定完才进入 OP 完成。
+                if (ticks >= 55 && work == null && UiChecks.framesRead()) {
                     query(client, player -> command(player, "meridian opening complete " + player.getScoreboardName() + " right_lung_meridian"));
                     next(Stage.DEBUG);
                 }
@@ -278,7 +281,7 @@ final class OpeningEffectsJourney {
         BreathingView view = canvas.breathingView();
         if (!view.getActive()) {
             if (ticks % 10 == 0) {
-                panel.root().childById(Component.class, "breathing-start").onMouseDown(1, 1, 0);
+                panel.root().childById(UIComponent.class, "breathing-start").onMouseDown(UiChecks.mouse(1, 1, 0), false);
             }
             return;
         }
@@ -301,15 +304,15 @@ final class OpeningEffectsJourney {
         }
         if (desired != breathButton) {
             if (breathButton >= 0) {
-                canvas.onMouseUp(x, y, breathButton);
+                canvas.onMouseUp(UiChecks.mouse(x, y, breathButton));
             }
-            canvas.onMouseDown(x, y, desired);
+            canvas.onMouseDown(UiChecks.mouse(x, y, desired), false);
             breathButton = desired;
         } else if (ticks % 5 == 0) {
             // 切换观察窗口会触发失焦释放，验收重新按下同一鼠标键续接正式输入。
-            canvas.onMouseDown(x, y, desired);
+            canvas.onMouseDown(UiChecks.mouse(x, y, desired), false);
         } else {
-            canvas.onMouseDrag(x, y, 0, 0, desired);
+            canvas.onMouseDrag(UiChecks.mouse(x, y, desired), 0, 0);
         }
     }
 
@@ -335,8 +338,7 @@ final class OpeningEffectsJourney {
 
     private static void command(ServerPlayer player, String command) {
         // 和玩家管理员使用同一命令树，不直接改身体或开脉状态。
-        int result = player.getServer().getCommands().performPrefixedCommand(player.createCommandSourceStack().withPermission(4), command);
-        require(result == 1, "命令失败：" + command);
+        require(UiChecks.runCommand(player, command) == 1, "命令失败：" + command);
     }
 
     private void next(Stage stage) {
@@ -348,29 +350,34 @@ final class OpeningEffectsJourney {
 
     private static void capture(Minecraft client, String name) {
         // 保存真正GPU帧缓冲，截图不会替代权威结果断言。
-        Screenshot.grab(client.gameDirectory, name, client.getMainRenderTarget(), ignored -> {});
+        Screenshot.grab(client.gameDirectory, name, client.gameRenderer.mainRenderTarget(), 1, ignored -> {});
     }
 
-    private int redPixels(Minecraft client) {
+    private void requireRedPixels(Minecraft client) {
         // 排除窗口文字和底部控制条，只在实际3D画布里验证退光已经被GPU绘制。
+        // 画布范围在提交回读时取定，与回读到的那一帧一致；计数在回读完成后判定。
         var canvas = module.meridianPanel().canvas();
         double scale = client.getWindow().getGuiScale();
-        int count = 0;
-        try (var image = Screenshot.takeScreenshot(client.getMainRenderTarget())) {
-            for (int y = (int) ((canvas.y() + 12) * scale); y < (canvas.y() + canvas.height() - 110) * scale; y++) {
-                for (int x = (int) ((canvas.x() + 12) * scale); x < (canvas.x() + canvas.width() - 12) * scale; x++) {
-                    int color = image.getPixelRGBA(x, y);
-                    int red = color & 255;
-                    int green = color >> 8 & 255;
-                    int blue = color >> 16 & 255;
+        int top = (int) ((canvas.y() + 12) * scale);
+        double bottom = (canvas.y() + canvas.height() - 110) * scale;
+        int left = (int) ((canvas.x() + 12) * scale);
+        double right = (canvas.x() + canvas.width() - 12) * scale;
+        UiChecks.readFrame(client, image -> {
+            int count = 0;
+            for (int y = top; y < bottom; y++) {
+                for (int x = left; x < right; x++) {
+                    int color = image.getPixel(x, y);
+                    int red = ARGB.red(color);
+                    int green = ARGB.green(color);
+                    int blue = ARGB.blue(color);
                     if (red > 60 && red > green * 1.5 && blue > green * .7) {
                         count++;
                     }
                 }
             }
-        }
-        System.out.println("OPENING_GPU_RED_PIXELS " + count);
-        return count;
+            System.out.println("OPENING_GPU_RED_PIXELS " + count);
+            require(count > 10, "权威暂停后，GPU没有显示暗红回退");
+        });
     }
 
     private static void require(boolean condition, String message) {

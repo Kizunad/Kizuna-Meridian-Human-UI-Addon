@@ -31,7 +31,7 @@ smoke 启动时删除运行目录中的吐纳指引已读偏好，按新玩家�
 
 2026-10-20 已在完整装配的真实单机整合服通过，三个标记 `CULTIVATION_JOURNEY_OK`、`PROGRESSION_JOURNEY_OK`、`HUMAN_UI_SMOKE_OK` 均出现。成功相变实际连续运行60模拟秒，没有用调试指令设置境界或成功进度；另测中断清零、不退已耗燃料。验收还定位并修复了活动同tick重复提交造成伤害版本冲突的问题。
 
-默认工作区中，本仓与 Human、UI、Progression、Framework、Inventory UI 等独立仓库同级，位置由 Framework 的 `scripts/workspace.gradle` 按装配清单提供，单个仓库可用 `-Pkizuna.dir.<清单 id>=<目录>` 改指。产物面向 Java 17；Gradle 8.14.6 与 Loom 1.13.6 本身需要 JDK 21 运行。这些仓库都通过 composite build 组合实际源码，编译取上游的 named 开发 JAR 并随本仓先行构建，不复制协议或模型。
+默认工作区中，本仓与 Human、UI、Progression、Framework、Inventory UI 等独立仓库同级，位置由 Framework 的 `scripts/workspace.gradle` 按装配清单提供，单个仓库可用 `-Pkizuna.dir.<清单 id>=<目录>` 改指。产物面向 Java 25；Gradle 守护进程按 `gradle/gradle-daemon-jvm.properties` 使用 JDK 25（Gradle 9.8.0、Loom 1.19.3）。这些仓库都通过 composite build 组合实际源码，编译直接取上游普通 JAR（Minecraft 26.2 不混淆，无映射）并随本仓先行构建，不复制协议或模型。
 
 编译依赖随组合构建先行构建，不再需要先在 UI 仓打 JAR。开发运行的完整装配里，未以源码组合的仓库仍按清单读取安装产物，需事先构建。在本仓验证：
 
@@ -45,7 +45,7 @@ xvfb-run -a ./gradlew :client:runSmoke --offline --console=plain --no-watch-fs
 
 本轮要求 UI checkout 已提供 `dev.kizuna.meridian.ui.api.MeridianRouteProvider`；组合构建直接编译 UI 当前源码。`local.meridian:*` 是 Framework 的本地替换键；Progression、Human、UI 与 Inventory UI 的替换键用各自工程的 group 与工程名，同样不是已发布的 Maven 坐标。
 
-安装产物为 `client/build/libs/kizuna-meridian-human-ui-addon-client-0.1.0-SNAPSHOT.jar`。Meridian 各 Addon 按适用端整套安装；真实玩家由 Human Fabric 权威宿主提供身体快照。本包不内嵌任何依赖，`fabric.mod.json` 强制声明 `meridian_human` 与 `meridian_ui`，UI 也强制声明 `meridian_human_ui`；Gradle 以组合工程的 named 开发 JAR 编译 UI、Inventory UI 与 Progression，人体展示包作为普通库直接依赖；共享脚本用 `modLocalRuntime` / `localRuntime` 按替换坐标或安装产物装配其他模组。开发装配不沿 composite 发布变体传递，避免其他工程重复加载当前工程的安装 JAR。缺包由 Loader 拒绝启动，客户端路线必须唯一装配且返回有效坐标。本仓仅客户端产物，不安装到专服。
+安装产物为 `client/build/libs/kizuna-meridian-human-ui-addon-client-0.1.0-SNAPSHOT.jar`。Meridian 各 Addon 按适用端整套安装；真实玩家由 Human Fabric 权威宿主提供身体快照。本包不内嵌任何依赖，`fabric.mod.json` 强制声明 `meridian_framework`、`meridian_human` 与 `meridian_ui`，UI 也强制声明 `meridian_human_ui`；Gradle 以组合工程的普通 JAR 编译 UI、Inventory UI 与 Progression，中焦面板的 `meridian_human:cultivation` 通道直接取用 Human Fabric 模组的 `HumanChannels.CULTIVATION`（字节通道类型来自 Framework Fabric 模组），人体展示包作为普通库直接依赖；共享脚本用 `modLocalRuntime` / `localRuntime` 按替换坐标或安装产物装配其他模组。开发装配不沿 composite 发布变体传递，避免其他工程重复加载当前工程的安装 JAR。缺包由 Loader 拒绝启动，客户端路线必须唯一装配且返回有效坐标。本仓仅客户端产物，不安装到专服。
 
 `HumanMeridianRoutesTest` 使用 Human 实际模板与成品模型，验证全部人体连接有路线、四条专属连接、左右镜像、人中交汇、坐标边界、只读结果及无效绑定拒绝。旧同侧连接按实际端点展示，不迁移成新拓扑。UI 整体回归覆盖路线绘制、坏路径、缺连接和境界隐藏，不保留缺少 Human-UI 的测试或 smoke。
 
@@ -56,3 +56,5 @@ xvfb-run -a ./gradlew :client:runSmoke --offline --console=plain --no-watch-fs
 2026-10-23 复验：即时右键解锁规则与三卷独立生成背景/图标接入后，本仓构建、3 项 JUnit、完整 Xvfb 客户端 smoke 通过。`PROGRESSION_JOURNEY_OK` 与 `HUMAN_UI_SMOKE_OK` 均出现；两卷新卷在播放约 4.5 秒时关闭，菜单仍已解锁；保存重启、OP 重置和重生保留规则通过。三卷截图为 `client/build/smoke/screenshots/qi-notes-reading.png`、`gathering-reading.png`、`middle-jiao-reading.png`，属于 Linux 实际客户端画面。本轮没有更新 Windows Native 装配。
 
 闭环必须输出 `PROGRESSION_JOURNEY_OK`，内观成功标记为 `HUMAN_UI_SMOKE_OK` 与 `client/build/smoke/human-ui-smoke-ok.txt`，截图在同目录 `screenshots/qi-notes-reading.png` 和 `screenshots/middle-jiao-*.png`。`smoke` 源集和测试用 Human 服务端依赖不进入生产 JAR，运行日志、截图和构建产物均被 Git 忽略。
+
+2026-11-01 迁移到 Minecraft 26.2：本仓 `test build` 通过，JUnit 4 项（`HumanMeridianRoutesTest` 3、`HumanVitalityPresentationTest` 1）零失败、错误、跳过，与迁移前相同；`smoke` 源集编译通过；`check_docs.py` 通过。smoke 的帧缓冲像素检查改用 26.2 的异步回读：提交时取到已画好的上一帧，回读完成后再判定，依赖结果的下一步先等回读完成；人中光尾和红/绿关口截图改为直接保存参与判定的那一帧。三种 `runSmoke` 都依赖完整装配，而完整装配尚未迁到 26.2，本次没有运行；内观、中焦与开脉画面也尚未实看。本页其余 1.20.1 时期的结果不代表 26.2 已验证。

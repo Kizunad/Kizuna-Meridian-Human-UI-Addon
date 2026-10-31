@@ -19,13 +19,13 @@ final class ScrollAudioCheck implements SoundEventListener {
     }
 
     @Override
-    public void onPlaySound(SoundInstance sound, WeighedSoundEvents set) {
+    public void onPlaySound(SoundInstance sound, WeighedSoundEvents set, float range) {
         // 忽略世界脚步等无关声音；记录实际解析到的素材，资源缺失不能误报通过。
-        if (!sound.getLocation().getNamespace().equals("meridian_progression")) {
+        if (!sound.getIdentifier().getNamespace().equals("meridian_progression")) {
             return;
         }
         played.add(sound);
-        System.out.println("SCROLL_AUDIO_PLAY " + sound.getLocation().getPath()
+        System.out.println("SCROLL_AUDIO_PLAY " + sound.getIdentifier().getPath()
                 + " loop=" + sound.isLooping() + " at=" + System.currentTimeMillis());
     }
 
@@ -47,8 +47,8 @@ final class ScrollAudioCheck implements SoundEventListener {
                 : List.of("paper_rustle", "low_wind");
         require(names().equals(expected), "开合纸声次数错误：" + names());
         for (SoundInstance sound : played) {
-            require(!client.getSoundManager().isActive(sound), "切屏后残留声音：" + sound.getLocation());
-            if (!sound.getLocation().getPath().equals("low_wind")) {
+            require(!client.getSoundManager().isActive(sound), "切屏后残留声音：" + sound.getIdentifier());
+            if (!sound.getIdentifier().getPath().equals("low_wind")) {
                 require(!sound.isLooping(), "纸声仍然循环");
             }
         }
@@ -58,7 +58,7 @@ final class ScrollAudioCheck implements SoundEventListener {
 
     private List<String> names() {
         // 保留调用顺序，重复播放同一素材也会进入断言。
-        return played.stream().map(sound -> sound.getLocation().getPath()).toList();
+        return played.stream().map(sound -> sound.getIdentifier().getPath()).toList();
     }
 
     private static void require(boolean condition, String message) {

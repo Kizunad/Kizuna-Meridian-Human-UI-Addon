@@ -1,5 +1,6 @@
 package dev.kizuna.meridian.human.ui;
 
+import dev.kizuna.meridian.human.fabric.HumanChannels;
 import dev.kizuna.meridian.human.pb.CultivationMessages.CultivationInput;
 import dev.kizuna.meridian.human.pb.CultivationMessages.CultivationState;
 import dev.kizuna.meridian.protocol.pb.BodyMessages.BodySnapshot;
@@ -11,13 +12,12 @@ import dev.kizuna.meridian.ui.api.MeridianSceneExtension;
 import dev.kizuna.meridian.ui.client.BodyCanvas;
 import dev.kizuna.meridian.ui.client.BodyScene;
 import dev.kizuna.meridian.ui.client.EffectSettings;
-import io.wispforest.owo.ui.base.BaseComponent;
-import io.wispforest.owo.ui.core.Component;
-import io.wispforest.owo.ui.core.OwoUIDrawContext;
+import io.wispforest.owo.ui.base.BaseUIComponent;
+import io.wispforest.owo.ui.core.UIComponent;
+import io.wispforest.owo.ui.core.OwoUIGraphics;
 import net.fabricmc.fabric.api.client.networking.v1.ClientPlayNetworking;
-import net.fabricmc.fabric.api.networking.v1.PacketByteBufs;
 import net.minecraft.client.Minecraft;
-import net.minecraft.resources.ResourceLocation;
+import net.minecraft.client.input.MouseButtonEvent;
 import org.lwjgl.glfw.GLFW;
 import java.util.ArrayList;
 import java.util.List;
@@ -62,7 +62,7 @@ public final class HumanCultivationPanel implements MeridianSceneExtension {
         return new Controls(scene, canvas);
     }
 
-    private static final class Controls extends BaseComponent implements Session {
+    private static final class Controls extends BaseUIComponent implements Session {
         private final BodyScene scene;
         private final BodyCanvas canvas;
         private final HumanMeridianRoutes routes = new HumanMeridianRoutes();
@@ -84,7 +84,7 @@ public final class HumanCultivationPanel implements MeridianSceneExtension {
         }
 
         @Override
-        public Component component() {
+        public UIComponent component() {
             // UI 框架只挂载组件，不解释人体状态或命令。
             return this;
         }
@@ -114,7 +114,7 @@ public final class HumanCultivationPanel implements MeridianSceneExtension {
         }
 
         @Override
-        public void draw(OwoUIDrawContext context, int mouseX, int mouseY, float partialTicks, float delta) {
+        public void draw(OwoUIGraphics context, int mouseX, int mouseY, float partialTicks, float delta) {
             // 逐帧只画图并检测输入边沿；每帧不提交资源或时间推进。
             if (body == null) {
                 return;
@@ -184,7 +184,7 @@ public final class HumanCultivationPanel implements MeridianSceneExtension {
             }
         }
 
-        private void gateDial(OwoUIDrawContext context, int left, double clock) {
+        private void gateDial(OwoUIGraphics context, int left, double clock) {
             // 右栏用同一套红绿语义画放大的关口圈，玩家不必在三维模型里找小圆。
             Gate gate = gate(clock);
             int localCenterY = 24 + DIAL_RING_MAX + 6;
@@ -228,7 +228,7 @@ public final class HumanCultivationPanel implements MeridianSceneExtension {
             centered(context, detail, left + DIAL_WIDTH / 2, localCenterY + DIAL_RING_MAX + 18, 0xFFB3BDBB, 1);
         }
 
-        private void automaticStatus(OwoUIDrawContext context, int left) {
+        private void automaticStatus(OwoUIGraphics context, int left) {
             // 自动模式只展示脑耐力和停止线，数值全部来自服务端写入的周天状态。
             int barLeft = left + 10;
             int barWidth = DIAL_WIDTH - 20;
@@ -299,7 +299,7 @@ public final class HumanCultivationPanel implements MeridianSceneExtension {
 
         private void pollKeys() {
             // 边沿发送避免按住键每帧刷包；窗口关闭单独撤销会话。
-            long handle = Minecraft.getInstance().getWindow().getWindow();
+            long handle = Minecraft.getInstance().getWindow().handle();
             boolean push = state.getRunning() && !state.getAutomatic() && GLFW.glfwGetKey(handle, GLFW.GLFW_KEY_G) == GLFW.GLFW_PRESS;
             boolean strike = state.getRunning() && !state.getAutomatic() && GLFW.glfwGetKey(handle, GLFW.GLFW_KEY_SPACE) == GLFW.GLFW_PRESS;
             if (push != lastPush) {
@@ -313,15 +313,18 @@ public final class HumanCultivationPanel implements MeridianSceneExtension {
         }
 
         @Override
-        public boolean onMouseDown(double mouseX, double mouseY, int button) {
-            // 控件按实际可用宽度均分，缩放后仍使用同一命中布局。
+        public boolean onMouseDown(MouseButtonEvent click, boolean doubled) {
+            // 控件按实际可用宽度均分，缩放后仍使用同一命中布局；owo 传入的是组件内相对坐标。
+            double mouseX = click.x();
+            double mouseY = click.y();
+            int button = click.button();
             int index = Math.min(4, (int) mouseX / Math.max(30, width / 5));
             if (button == 1 && mouseY <= 22 && index == 4) {
                 EffectSettings.cycleLimit();
                 return true;
             }
             if (button != 0 || mouseY > 22) {
-                return super.onMouseDown(mouseX, mouseY, button);
+                return super.onMouseDown(click, doubled);
             }
             switch (index) {
                 case 0 -> send(state.getRunning() ? CultivationInput.Operation.STOP
@@ -359,9 +362,7 @@ public final class HumanCultivationPanel implements MeridianSceneExtension {
             // 不上传推力数值、密度或门槛结果，服务端只接收边沿和所见模拟tick。
             var request = CultivationInput.newBuilder().setSequence(++sequence).setOperation(operation)
                     .setKeyTick(body.getSettledAt().getElapsedMillis() / 50).build();
-            var buffer = PacketByteBufs.create();
-            buffer.writeBytes(request.toByteArray());
-            ClientPlayNetworking.send(new ResourceLocation("meridian_human", "cultivation"), buffer);
+            ClientPlayNetworking.send(HumanChannels.CULTIVATION.payload(request.toByteArray()));
         }
 
         private double clock() {
@@ -424,25 +425,25 @@ public final class HumanCultivationPanel implements MeridianSceneExtension {
             return target * (1 - .5 * late);
         }
 
-        private static void ring(OwoUIDrawContext context, int centerX, int centerY, double radius, double thickness, int color) {
+        private static void ring(OwoUIGraphics context, int centerX, int centerY, double radius, double thickness, int color) {
             // 二维指示盘与三维标记共用“白圈目标、红绿收缩圈”的语义，线宽足够看清颜色。
             var fill = io.wispforest.owo.ui.core.Color.ofArgb(color);
             context.drawRing(centerX, centerY, 48, Math.max(0, radius - thickness / 2), radius + thickness / 2, fill, fill);
         }
 
-        private void centered(OwoUIDrawContext context, String value, int center, int top, int color, float scale) {
+        private void centered(OwoUIGraphics context, String value, int center, int top, int color, float scale) {
             // 状态字放大居中，玩家余光就能看到“按空格！”或“吸气中”。
             var font = Minecraft.getInstance().font;
             float left = x + center - font.width(value) * scale / 2;
             context.drawText(net.minecraft.network.chat.Component.literal(value), left, y + top, scale, color);
         }
 
-        private void paragraph(OwoUIDrawContext context, String value, int left, int top, int maxWidth, int color) {
+        private void paragraph(OwoUIGraphics context, String value, int left, int top, int maxWidth, int color) {
             // 说明按实际宽度折行，窄窗口下也不截掉停止线、效率等关键限制；最多三行以免压到底部提示。
             var font = Minecraft.getInstance().font;
             var lines = font.split(net.minecraft.network.chat.Component.literal(value), maxWidth);
             for (int line = 0; line < Math.min(3, lines.size()); line++) {
-                context.drawString(font, lines.get(line), x + left, y + top + line * 11, color, false);
+                context.text(font, lines.get(line), x + left, y + top + line * 11, color, false);
             }
         }
 
@@ -458,22 +459,22 @@ public final class HumanCultivationPanel implements MeridianSceneExtension {
             return volume == 0 ? .01 : amount / volume;
         }
 
-        private void button(OwoUIDrawContext context, int index, int buttonWidth, String title, boolean active) {
+        private void button(OwoUIGraphics context, int index, int buttonWidth, String title, boolean active) {
             // 简洁自绘控件保持既有内观风格，避免原版按钮占去整块场景。
             int start = index * buttonWidth;
             context.fill(x + start + 2, y + 2, x + start + buttonWidth - 2, y + 20, active ? 0xFF414A3C : 0xFF202B31);
             text(context, title, start + 6, 7, active ? 0xFFFFE9A5 : 0xFFCBD3D4);
         }
 
-        private void bar(OwoUIDrawContext context, int left, int top, int barWidth, double fraction, int color) {
+        private void bar(OwoUIGraphics context, int left, int top, int barWidth, double fraction, int color) {
             // 进度仅显示权威快照，不在客户端继续累计突破秒数。
             context.fill(x + left, y + top, x + left + barWidth, y + top + 4, 0xFF273139);
             context.fill(x + left, y + top, x + left + (int) (barWidth * Math.max(0, Math.min(1, fraction))), y + top + 4, color);
         }
 
-        private void text(OwoUIDrawContext context, String text, int left, int top, int color) {
+        private void text(OwoUIGraphics context, String text, int left, int top, int color) {
             // 控制条使用常规文本层，始终位于3D帧缓冲合成之后。
-            context.drawString(Minecraft.getInstance().font, text, x + left, y + top, color, false);
+            context.text(Minecraft.getInstance().font, text, x + left, y + top, color, false);
         }
     }
 }

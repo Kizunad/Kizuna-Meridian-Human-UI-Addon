@@ -24,7 +24,7 @@ subprojects {
         options.encoding = 'UTF-8'
     }
     tasks.withType(JavaExec).configureEach {
-        // 游戏验证与正式编译统一使用 Java 17。
+        // 游戏验证与正式编译统一使用 Java 25。
         javaLauncher = javaToolchains.launcherFor { languageVersion = JavaLanguageVersion.of(libs.versions.java.get()) }
     }
     tasks.withType(Jar).configureEach {

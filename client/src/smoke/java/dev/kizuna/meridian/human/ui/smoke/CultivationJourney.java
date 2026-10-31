@@ -2,6 +2,7 @@ package dev.kizuna.meridian.human.ui.smoke;
 
 import com.mojang.blaze3d.platform.NativeImage;
 import dev.kizuna.inventoryui.client.InventoryUiClient;
+import dev.kizuna.meridian.human.fabric.HumanChannels;
 import dev.kizuna.meridian.human.fabric.HumanHealthHost;
 import dev.kizuna.meridian.human.pb.CultivationMessages.*;
 import dev.kizuna.meridian.human.server.HumanCultivation;
@@ -9,13 +10,13 @@ import dev.kizuna.meridian.protocol.pb.BodyMessages.*;
 import dev.kizuna.meridian.protocol.pb.HealthHostMessages.*;
 import dev.kizuna.meridian.ui.client.BodyUiModule;
 import net.fabricmc.fabric.api.client.networking.v1.ClientPlayNetworking;
-import net.fabricmc.fabric.api.networking.v1.PacketByteBufs;
 import net.minecraft.client.Minecraft;
 import net.minecraft.client.Screenshot;
-import net.minecraft.resources.ResourceLocation;
 import net.minecraft.server.level.ServerPlayer;
+import net.minecraft.util.ARGB;
 import java.util.UUID;
 import java.util.concurrent.CompletableFuture;
+import java.util.function.BiConsumer;
 
 /** 完整单机验收：使用正式命令和客户端网络输入，在真实整合服时间下运行。 */
 final class CultivationJourney {
@@ -75,7 +76,7 @@ final class CultivationJourney {
                     break;
                 }
                 require(state.getPracticedGates() == 0, "自动解锁验收必须从零次手动冲关开始");
-                Screenshot.grab(client.gameDirectory, "middle-jiao-unlocked.png", client.getMainRenderTarget(), ignored -> {});
+                Screenshot.grab(client.gameDirectory, "middle-jiao-unlocked.png", client.gameRenderer.mainRenderTarget(), 1, ignored -> {});
                 clickControl(client, module, 1);
                 clickControl(client, module, 0);
                 next(Stage.AUTOMATIC_RUNNING);
@@ -85,7 +86,7 @@ final class CultivationJourney {
                     break;
                 }
                 require(state.getRunning() && state.getAutomatic(), "读卷后真实复选框未能启动自动中焦");
-                Screenshot.grab(client.gameDirectory, "middle-jiao-automatic.png", client.getMainRenderTarget(), ignored -> {});
+                Screenshot.grab(client.gameDirectory, "middle-jiao-automatic.png", client.gameRenderer.mainRenderTarget(), 1, ignored -> {});
                 automaticCaptured = true;
                 clickControl(client, module, 1);
                 next(Stage.MANUAL);
@@ -100,20 +101,28 @@ final class CultivationJourney {
                 double offsetMillis = body.getSettledAt().getElapsedMillis() - state.getGateRetryUntil();
                 if (state.getGateRetryUntil() > 0 && state.getExhaling() && Math.abs(offsetMillis) <= 350) {
                     // 截图前确认画面里确实是绿圈；画面尚未变绿时最多等到目标时刻再按，保证仍在服务端窗口内。
-                    if (!greenCaptured && gateColors(client, module)[1] > 200) {
-                        Screenshot.grab(client.gameDirectory, "middle-jiao-gate-green.png", client.getMainRenderTarget(), ignored -> {});
-                        greenCaptured = true;
-                        send(CultivationInput.Operation.STRIKE_GATE);
-                    } else if (greenCaptured || offsetMillis >= 0) {
+                    // 26.2 只能异步回读：同时只留一次回读，确认是绿圈的那一帧在回读完成时原样存档，随后的 tick 再按。
+                    if (!greenCaptured && UiChecks.framesRead()) {
+                        gateColors(client, module, (colors, image) -> {
+                            if (colors[1] > 200) {
+                                UiChecks.save(client, image, "middle-jiao-gate-green.png");
+                                greenCaptured = true;
+                            }
+                        });
+                    }
+                    if (greenCaptured || offsetMillis >= 0) {
                         send(CultivationInput.Operation.STRIKE_GATE);
                     }
                 } else if (!redCaptured && state.getGateRetryUntil() > 0 && state.getExhaling()
                         && offsetMillis < -(state.getGateWindowMillis() + 150)) {
-                    // 红态取呼气中尚未到点的收缩圈，画面必须只有红圈没有绿圈。
-                    int[] colors = gateColors(client, module);
-                    if (colors[0] > 200 && colors[1] < 50) {
-                        Screenshot.grab(client.gameDirectory, "middle-jiao-gate-red.png", client.getMainRenderTarget(), ignored -> {});
-                        redCaptured = true;
+                    // 红态取呼气中尚未到点的收缩圈，画面必须只有红圈没有绿圈；同样存下参与判定的那一帧。
+                    if (UiChecks.framesRead()) {
+                        gateColors(client, module, (colors, image) -> {
+                            if (colors[0] > 200 && colors[1] < 50) {
+                                UiChecks.save(client, image, "middle-jiao-gate-red.png");
+                                redCaptured = true;
+                            }
+                        });
                     }
                 }
                 require(state.getLaps() < 5, "五圈内没有拍到红绿关口两态：red=" + redCaptured + " green=" + greenCaptured);
@@ -121,7 +130,7 @@ final class CultivationJourney {
                     require(state.getPracticedGates() >= 8, "真实手动冲关未累计熟练度");
                     var transit = body.getTransitsList().stream().filter(item -> item.hasCircuit()).findFirst().orElseThrow();
                     require(transit.getCargo().getEntries(0).getDensity() > .01, "真实周天没有提纯");
-                    Screenshot.grab(client.gameDirectory, "cultivation-manual.png", client.getMainRenderTarget(), ignored -> {});
+                    Screenshot.grab(client.gameDirectory, "cultivation-manual.png", client.gameRenderer.mainRenderTarget(), 1, ignored -> {});
                     send(CultivationInput.Operation.STOP);
                     next(Stage.DEPOSIT);
                     sentStart = false;
@@ -159,7 +168,7 @@ final class CultivationJourney {
                     break;
                 }
                 if (!automaticCaptured && state.getAutomatic()) {
-                    Screenshot.grab(client.gameDirectory, "middle-jiao-automatic.png", client.getMainRenderTarget(), ignored -> {});
+                    Screenshot.grab(client.gameDirectory, "middle-jiao-automatic.png", client.gameRenderer.mainRenderTarget(), 1, ignored -> {});
                     automaticCaptured = true;
                 }
                 if (!sentStart) {
@@ -207,7 +216,7 @@ final class CultivationJourney {
                     require(state.getBreakthroughSeconds() == 60, "未保持60秒即升境");
                     require(body.getMeridianStatesList().stream().flatMap(item -> item.getLumenQi().getEntriesList().stream())
                             .anyMatch(qi -> qi.getDensity() == .1), "突破没有转换候选密度");
-                    Screenshot.grab(client.gameDirectory, "cultivation-success.png", client.getMainRenderTarget(), ignored -> {});
+                    Screenshot.grab(client.gameDirectory, "cultivation-success.png", client.gameRenderer.mainRenderTarget(), 1, ignored -> {});
                     send(CultivationInput.Operation.STOP);
                     System.out.println("CULTIVATION_JOURNEY_OK manual/purify/gates/deposit/mobilize/failure/success");
                     java.nio.file.Files.writeString(client.gameDirectory.toPath().resolve("cultivation-journey-ok.txt"),
@@ -234,11 +243,11 @@ final class CultivationJourney {
 
     private static void clickControl(Minecraft client, BodyUiModule module, int index) {
         // 经过真实屏幕命中链点击复选框或开始按钮，保护独立窗口中的控件遮挡问题。
-        var controls = module.practicePanel().root().childById(io.wispforest.owo.ui.core.Component.class, "middle-jiao-controls");
+        var controls = module.practicePanel().root().childById(io.wispforest.owo.ui.core.UIComponent.class, "middle-jiao-controls");
         double x = controls.x() + (index + .5) * Math.max(30, controls.width() / 5);
         double y = controls.y() + 10;
-        client.screen.mouseClicked(x, y, 0);
-        client.screen.mouseReleased(x, y, 0);
+        client.gui.screen().mouseClicked(UiChecks.mouse(x, y, 0), false);
+        client.gui.screen().mouseReleased(UiChecks.mouse(x, y, 0));
     }
 
     private String diagnosis(String title, CultivationState state) {
@@ -271,21 +280,24 @@ final class CultivationJourney {
         return 1 - fatigue / capacity;
     }
 
-    private static int[] gateColors(Minecraft client, BodyUiModule module) {
+    private static void gateColors(Minecraft client, BodyUiModule module, BiConsumer<int[], NativeImage> result) {
         // 统计中焦控件区域内的纯红、纯绿像素，确认截图里真的出现红圈或绿圈。
-        var controls = module.practicePanel().root().childById(io.wispforest.owo.ui.core.Component.class, "middle-jiao-controls");
+        // 控件范围在提交回读时取定，与回读到的那一帧一致；红绿计数在回读完成后连同该帧交给调用方。
+        var controls = module.practicePanel().root().childById(io.wispforest.owo.ui.core.UIComponent.class, "middle-jiao-controls");
         double scale = client.getWindow().getGuiScale();
-        int red = 0;
-        int green = 0;
-        try (NativeImage image = Screenshot.takeScreenshot(client.getMainRenderTarget())) {
-            int bottom = Math.min(image.getHeight(), (int) ((controls.y() + controls.height()) * scale));
-            int right = Math.min(image.getWidth(), (int) ((controls.x() + controls.width()) * scale));
-            for (int y = Math.max(0, (int) (controls.y() * scale)); y < bottom; y++) {
-                for (int x = Math.max(0, (int) (controls.x() * scale)); x < right; x++) {
-                    int color = image.getPixelRGBA(x, y);
-                    int r = color & 255;
-                    int g = color >> 8 & 255;
-                    int b = color >> 16 & 255;
+        int top = Math.max(0, (int) (controls.y() * scale));
+        int left = Math.max(0, (int) (controls.x() * scale));
+        int bottom = (int) ((controls.y() + controls.height()) * scale);
+        int right = (int) ((controls.x() + controls.width()) * scale);
+        UiChecks.readFrame(client, image -> {
+            int red = 0;
+            int green = 0;
+            for (int y = top; y < Math.min(image.getHeight(), bottom); y++) {
+                for (int x = left; x < Math.min(image.getWidth(), right); x++) {
+                    int color = image.getPixel(x, y);
+                    int r = ARGB.red(color);
+                    int g = ARGB.green(color);
+                    int b = ARGB.blue(color);
                     if (r > 220 && g < 110 && b < 110) {
                         red++;
                     }
@@ -294,8 +306,8 @@ final class CultivationJourney {
                     }
                 }
             }
-        }
-        return new int[]{red, green};
+            result.accept(new int[]{red, green}, image);
+        });
     }
 
     private double wall() {
@@ -326,15 +338,12 @@ final class CultivationJourney {
         // 与正式控件使用同一频道和消息，服务端不识别测试特例。
         var input = CultivationInput.newBuilder().setSequence(++sequence).setOperation(operation)
                 .setKeyTick(body.getSettledAt().getElapsedMillis() / 50).build();
-        var buffer = PacketByteBufs.create();
-        buffer.writeBytes(input.toByteArray());
-        ClientPlayNetworking.send(new ResourceLocation("meridian_human", "cultivation"), buffer);
+        ClientPlayNetworking.send(HumanChannels.CULTIVATION.payload(input.toByteArray()));
     }
 
     private static void command(ServerPlayer player, String command) {
         // 管理指令必须真的成功，不能把错误聊天消息当作已准备好测试资源。
-        int result = player.getServer().getCommands().performPrefixedCommand(player.createCommandSourceStack().withPermission(4), command);
-        require(result == 1, "调试命令未成功：" + command);
+        require(UiChecks.runCommand(player, command) == 1, "调试命令未成功：" + command);
     }
 
     private static void require(boolean condition, String message) {

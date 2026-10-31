@@ -8,10 +8,11 @@ import dev.kizuna.meridian.protocol.pb.PresentationMessages.*;
 import dev.kizuna.meridian.ui.client.BodyInformation;
 import dev.kizuna.meridian.ui.client.BodyScene;
 import dev.kizuna.meridian.ui.client.BodyUiModule;
-import io.wispforest.owo.ui.core.Component;
+import io.wispforest.owo.ui.core.UIComponent;
 import java.util.List;
 import java.util.Set;
 import net.minecraft.client.Minecraft;
+import net.minecraft.server.permissions.LevelBasedPermissionSet;
 
 import static dev.kizuna.meridian.human.ui.smoke.UiChecks.*;
 
@@ -37,7 +38,7 @@ final class BodyViewerJourney {
         switch (stage) {
             case OPEN -> {
                 client.options.guiScale().set(2);
-                client.resizeDisplay();
+                client.resizeGui();
                 InventoryUiClient.runtime().openWorkspace();
                 window = InventoryUiClient.runtime().open("meridian_ui:body", null).key();
                 next(Stage.SURFACE);
@@ -110,7 +111,7 @@ final class BodyViewerJourney {
                     server.execute(() -> {
                         // 与管理员在游戏中执行同一命令树；命令按来源玩家找到身体并走权威事务。
                         var player = server.getPlayerList().getPlayer(playerId);
-                        server.getCommands().performPrefixedCommand(player.createCommandSourceStack().withPermission(4), "meridian qi fill");
+                        server.getCommands().performPrefixedCommand(player.createCommandSourceStack().withPermission(LevelBasedPermissionSet.OWNER), "meridian qi fill");
                     });
                     next(Stage.REFRESH);
                 }
@@ -125,8 +126,8 @@ final class BodyViewerJourney {
                         && module.panel().selectedId().equals("heart"), "快照刷新覆盖了镜头或选中对象");
                 // 经真实 Screen 中键回到全身，面板选择也一起清空。
                 var canvas = module.panel().canvas();
-                client.screen.mouseClicked(canvas.x() + canvas.width() / 2.0, canvas.y() + canvas.height() / 2.0, 2);
-                client.screen.mouseReleased(canvas.x() + canvas.width() / 2.0, canvas.y() + canvas.height() / 2.0, 2);
+                client.gui.screen().mouseClicked(mouse(canvas.x() + canvas.width() / 2.0, canvas.y() + canvas.height() / 2.0, 2), false);
+                client.gui.screen().mouseReleased(mouse(canvas.x() + canvas.width() / 2.0, canvas.y() + canvas.height() / 2.0, 2));
                 next(Stage.OVERVIEW);
             }
             case OVERVIEW -> {
@@ -197,6 +198,10 @@ final class BodyViewerJourney {
             }
             case CLOSE -> {
                 require(module.panel() == null, "检视窗口关闭后未清理组件");
+                // 两处模型像素回读都判定完才算通过。
+                if (!framesRead()) {
+                    break;
+                }
                 System.out.println("BODY_VIEWER_JOURNEY_OK layers/click/focus/organs/meridians/refresh/checkboxes/cleanup");
                 next(Stage.DONE);
             }
@@ -210,9 +215,9 @@ final class BodyViewerJourney {
         var panel = module.panel();
         panel.layer("skeleton");
         for (String layer : List.of("muscles", "organs", "meridians")) {
-            Component checkbox = panel.root().childById(Component.class, "layer-toggle-" + layer);
-            client.screen.mouseClicked(checkbox.x() + 12, checkbox.y() + 13, 0);
-            client.screen.mouseReleased(checkbox.x() + 12, checkbox.y() + 13, 0);
+            UIComponent checkbox = panel.root().childById(UIComponent.class, "layer-toggle-" + layer);
+            client.gui.screen().mouseClicked(mouse(checkbox.x() + 12, checkbox.y() + 13, 0), false);
+            client.gui.screen().mouseReleased(mouse(checkbox.x() + 12, checkbox.y() + 13, 0));
         }
         require(panel.visibleLayers().equals(Set.of("skeleton", "muscles", "organs", "meridians")), "勾选没有保留多层组合");
         panel.select(visual("left_eye"));

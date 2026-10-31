@@ -4,7 +4,7 @@ import dev.kizuna.inventoryui.client.InventoryUiClient;
 import dev.kizuna.inventoryui.window.UiWindowManager.WindowKey;
 import dev.kizuna.meridian.ui.client.BodyUiModule;
 import io.wispforest.owo.ui.container.ScrollContainer;
-import io.wispforest.owo.ui.core.Component;
+import io.wispforest.owo.ui.core.UIComponent;
 import org.lwjgl.glfw.GLFW;
 import java.util.List;
 import java.util.Set;
@@ -24,8 +24,8 @@ final class ResponsiveJourney {
     private boolean tutorialSeen;
     private WindowKey body;
     private WindowKey breathing;
-    private Component bodyRoot;
-    private Component breathingRoot;
+    private UIComponent bodyRoot;
+    private UIComponent breathingRoot;
     private int informationTop;
 
     boolean tick(Minecraft client, BodyUiModule module) throws Exception {
@@ -40,17 +40,17 @@ final class ResponsiveJourney {
             return true;
         }
         if (scenario == 0 && step == 1) {
-            client.setScreen(null);
+            client.gui.setScreen(null);
             InventoryUiClient.runtime().workspace().windows().reset();
             InventoryUiClient.runtime().openWorkspace();
             body = InventoryUiClient.runtime().open("meridian_ui:body", null).key();
-            GLFW.glfwFocusWindow(client.getWindow().getWindow());
+            GLFW.glfwFocusWindow(client.getWindow().handle());
         }
         if (step == 2) {
             int[] size = SIZES[scenario];
-            GLFW.glfwSetWindowSize(client.getWindow().getWindow(), size[0], size[1]);
+            GLFW.glfwSetWindowSize(client.getWindow().handle(), size[0], size[1]);
             client.options.guiScale().set(size[2]);
-            client.resizeDisplay();
+            client.resizeGui();
         }
         if (step == 15) {
             checkBody(client, module, scenario);
@@ -58,14 +58,14 @@ final class ResponsiveJourney {
         if (step == 20) {
             // 新尺寸下详情可能变长；用真实滚轮确认被裁掉的文字仍能读到。
             var root = module.panel().root();
-            Component details = root.childById(Component.class, "information-scroll");
-            informationTop = root.childById(Component.class, "information").y();
-            client.screen.mouseScrolled(details.x() + details.width() / 2.0, details.y() + details.height() / 2.0, -30);
+            UIComponent details = root.childById(UIComponent.class, "information-scroll");
+            informationTop = root.childById(UIComponent.class, "information").y();
+            client.gui.screen().mouseScrolled(details.x() + details.width() / 2.0, details.y() + details.height() / 2.0, 0, -30);
         }
         if (step == 27) {
             var root = module.panel().root();
-            Component details = root.childById(Component.class, "information-scroll");
-            Component information = root.childById(Component.class, "information");
+            UIComponent details = root.childById(UIComponent.class, "information-scroll");
+            UIComponent information = root.childById(UIComponent.class, "information");
             require(information.height() <= details.height() || information.y() < informationTop, "窄窗口详情无法通过实际滚轮查看");
         }
         if (step == 30) {
@@ -79,7 +79,7 @@ final class ResponsiveJourney {
             // 首次开始先出现指引，再次点击才真正开始；此后各组都要保持同一权威会话。
             tutorialSeen = !module.cultivationPanel().canvas().breathingView().getActive();
             capture(client, "responsive-tutorial.png");
-            click(client, module.cultivationPanel().root().childById(Component.class, "breathing-start"), 0);
+            click(client, module.cultivationPanel().root().childById(UIComponent.class, "breathing-start"), 0);
         }
         if (step == 70) {
             require(module.cultivationPanel().canvas().breathingView().getActive(), "调整大小后不能通过实际按钮开始吐纳");
@@ -100,10 +100,10 @@ final class ResponsiveJourney {
                     && panel.visibleLayers().equals(Set.of("organs")), "改变分辨率丢失了身体组件、选择或图层状态");
         }
         var root = panel.root();
-        Component layers = root.childById(Component.class, "layers-scroll");
-        Component details = root.childById(Component.class, "information-scroll");
-        for (Component area : List.of(layers, details, panel.canvas(),
-                root.childById(Component.class, "body-title"), root.childById(Component.class, "body-hint"))) {
+        UIComponent layers = root.childById(UIComponent.class, "layers-scroll");
+        UIComponent details = root.childById(UIComponent.class, "information-scroll");
+        for (UIComponent area : List.of(layers, details, panel.canvas(),
+                root.childById(UIComponent.class, "body-title"), root.childById(UIComponent.class, "body-hint"))) {
             requireInside(root, area);
         }
         requireSeparate(layers, panel.canvas());
@@ -127,13 +127,13 @@ final class ResponsiveJourney {
             require(root == breathingRoot && panel.canvas().breathingView().getActive(), "改变分辨率重建或中断了吐纳窗口");
         }
         // 自动吐纳复选框与四个资源控件同样叠在场景里，不能互相遮挡命中。
-        var controls = List.of(root.childById(Component.class, "breathing-air"),
-                root.childById(Component.class, "breathing-reserve"),
-                root.childById(Component.class, "breathing-start"),
-                root.childById(Component.class, "breathing-qi"),
-                root.childById(Component.class, "breathing-automatic"));
+        var controls = List.of(root.childById(UIComponent.class, "breathing-air"),
+                root.childById(UIComponent.class, "breathing-reserve"),
+                root.childById(UIComponent.class, "breathing-start"),
+                root.childById(UIComponent.class, "breathing-qi"),
+                root.childById(UIComponent.class, "breathing-automatic"));
         for (int index = 0; index < controls.size(); index++) {
-            Component control = controls.get(index);
+            UIComponent control = controls.get(index);
             requireInside(panel.canvas(), control);
             require(root.childAt(control.x() + control.width() / 2, control.y() + control.height() / 2) == control,
                     "吐纳控件的命中与绘制不一致：" + control.id());
@@ -143,7 +143,7 @@ final class ResponsiveJourney {
         }
         capture(client, "responsive-breathing-" + scenario + ".png");
         if (scenario == 0) {
-            click(client, root.childById(Component.class, "breathing-start"), 0);
+            click(client, root.childById(UIComponent.class, "breathing-start"), 0);
         }
     }
 
@@ -153,10 +153,10 @@ final class ResponsiveJourney {
         InventoryUiClient.runtime().workspace().windows().close(breathing);
         InventoryUiClient.runtime().workspace().windows().close(body);
         require(module.panel() == null && module.cultivationPanel() == null, "关闭后窗口组件未清理");
-        GLFW.glfwSetWindowSize(client.getWindow().getWindow(), 1440, 1000);
+        GLFW.glfwSetWindowSize(client.getWindow().handle(), 1440, 1000);
         client.options.guiScale().set(2);
-        client.resizeDisplay();
-        client.setScreen(null);
+        client.resizeGui();
+        client.gui.setScreen(null);
         System.out.println("RESPONSIVE_JOURNEY_OK five sizes; body layout/selection/scroll/click; breathing layout/hit/active session; tutorial");
         done = true;
     }

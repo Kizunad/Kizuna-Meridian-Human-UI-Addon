@@ -5,7 +5,7 @@ import dev.kizuna.inventoryui.window.UiWindowManager.WindowKey;
 import dev.kizuna.meridian.protocol.pb.BreathingMessages.BreathParticle;
 import dev.kizuna.meridian.protocol.pb.BreathingMessages.BreathingView;
 import dev.kizuna.meridian.ui.client.BodyUiModule;
-import io.wispforest.owo.ui.core.Component;
+import io.wispforest.owo.ui.core.UIComponent;
 import org.lwjgl.glfw.GLFW;
 import java.util.Comparator;
 import java.util.HashSet;
@@ -25,11 +25,11 @@ final class ManualBreathingJourney {
     private WindowKey breathing;
     private SoundInstance lastSound;
     private final Set<String> heardSounds = new HashSet<>();
-    private final SoundEventListener listener = (sound, sounds) -> {
+    private final SoundEventListener listener = (sound, sounds, range) -> {
         // 只记录本 UI 的吸呼声，确认真实声音管理器的播放与停止。
-        if (sound.getLocation().getNamespace().equals("meridian_ui")) {
+        if (sound.getIdentifier().getNamespace().equals("meridian_ui")) {
             lastSound = sound;
-            heardSounds.add(sound.getLocation().getPath());
+            heardSounds.add(sound.getIdentifier().getPath());
         }
     };
     private double attentionBefore;
@@ -44,12 +44,12 @@ final class ManualBreathingJourney {
         require(ticks < 2400, "手动吐纳回归超时");
         if (ticks == 1) {
             client.options.guiScale().set(2);
-            client.resizeDisplay();
+            client.resizeGui();
             client.getSoundManager().addListener(listener);
             InventoryUiClient.runtime().openWorkspace();
             body = InventoryUiClient.runtime().open("meridian_ui:body", null).key();
             breathing = InventoryUiClient.runtime().open("meridian_ui:cultivation", null).key();
-            GLFW.glfwFocusWindow(client.getWindow().getWindow());
+            GLFW.glfwFocusWindow(client.getWindow().handle());
         }
         if (ticks == 330) {
             // 吐纳窗口已在 315 tick 关闭：确认音效完整播放后关掉身体窗口，再单独重开吐纳窗口。
@@ -63,7 +63,7 @@ final class ManualBreathingJourney {
         }
         BreathingView breath = module.cultivationPanel().canvas().breathingView();
         if (ticks == 20) {
-            require(module.panel().root().childById(Component.class, "breathing-start") == null, "身体窗口仍存在修炼操作");
+            require(module.panel().root().childById(UIComponent.class, "breathing-start") == null, "身体窗口仍存在修炼操作");
             checkControls(module);
             capture(client, "breathing-ready.png");
             attentionBefore = breath.getAttentionRatio();
@@ -82,9 +82,9 @@ final class ManualBreathingJourney {
             var before = canvas.projectParticle(particle);
             double x = canvas.x() + canvas.width() * .5;
             double y = canvas.y() + canvas.height() * .5;
-            client.screen.mouseClicked(x, y, 2);
-            client.screen.mouseDragged(x + 85, y + 18, 2, 85, 18);
-            client.screen.mouseReleased(x + 85, y + 18, 2);
+            client.gui.screen().mouseClicked(mouse(x, y, 2), false);
+            client.gui.screen().mouseDragged(mouse(x + 85, y + 18, 2), 85, 18);
+            client.gui.screen().mouseReleased(mouse(x + 85, y + 18, 2));
             require(before.distance(canvas.projectParticle(particle)) >= .01, "中键拖动没有改变三维粒子投影");
         }
         if (ticks == 35) {
@@ -100,7 +100,7 @@ final class ManualBreathingJourney {
         if (ticks == 140) {
             require(Math.abs(breath.getAirLiters() - breath.getCapacityLiters()) <= .01, "持续吸气未被肺容量边界截断：" + breath.getAirLiters());
             capture(client, "breathing-full.png");
-            client.screen.mouseReleased(0, 0, 0);
+            client.gui.screen().mouseReleased(mouse(0, 0, 0));
         }
         if (ticks >= 150 && ticks <= 245 && ticks % 5 == 0) {
             steer(client, module, 1);
@@ -110,7 +110,7 @@ final class ManualBreathingJourney {
         }
         if (ticks == 250) {
             require(breath.getAirLiters() <= .01, "持续呼气没有排空并停止：" + breath.getAirLiters());
-            client.screen.mouseReleased(0, 0, 1);
+            client.gui.screen().mouseReleased(mouse(0, 0, 1));
         }
         if (ticks == 256) {
             require(lastSound == null || !client.getSoundManager().isActive(lastSound), "排空或松键后呼吸音效没有停止");
@@ -122,7 +122,7 @@ final class ManualBreathingJourney {
             // 结束前读取服务端视图：手动吸呼确实消耗了精力，并且本连接有真实摄入。
             require(breath.getAttentionRatio() < attentionBefore && breath.getAbsorbedQi() > absorbedBefore,
                     "手动吐纳没有消耗精力或没有真实摄入：" + breath);
-            client.screen.mouseReleased(0, 0, 0);
+            client.gui.screen().mouseReleased(mouse(0, 0, 0));
             InventoryUiClient.runtime().workspace().windows().close(breathing);
         }
         if (ticks == 350) {
@@ -141,16 +141,16 @@ final class ManualBreathingJourney {
         if (ticks == 425) {
             // 经脉已被前序夹具填满时服务端可提示配送暂时受阻，这不代表吐纳停止，只要求会话仍在进行。
             require(breath.getActive(), "重开窗口后无法再次吐纳：" + breath);
-            client.screen.mouseReleased(0, 0, 0);
-            client.screen.mouseReleased(0, 0, 1);
-            click(client, module.cultivationPanel().root().childById(Component.class, "breathing-start"), 0);
+            client.gui.screen().mouseReleased(mouse(0, 0, 0));
+            client.gui.screen().mouseReleased(mouse(0, 0, 1));
+            click(client, module.cultivationPanel().root().childById(UIComponent.class, "breathing-start"), 0);
         }
         if (ticks == 440) {
             require(!breath.getActive(), "结束按钮没有停止吐纳");
             capture(client, "breathing-renewed.png");
             InventoryUiClient.runtime().workspace().windows().close(breathing);
             client.getSoundManager().removeListener(listener);
-            client.setScreen(null);
+            client.gui.setScreen(null);
             System.out.println("MANUAL_BREATHING_JOURNEY_OK layout/orbit/inhale/full/exhale/empty/sound/cost/close/independent/restart");
             done = true;
         }
@@ -162,13 +162,16 @@ final class ManualBreathingJourney {
         var panel = module.cultivationPanel();
         var root = panel.root();
         var canvas = panel.canvas();
-        Component air = root.childById(Component.class, "breathing-air");
-        Component reserve = root.childById(Component.class, "breathing-reserve");
-        Component action = root.childById(Component.class, "breathing-start");
-        Component qi = root.childById(Component.class, "breathing-qi");
-        for (Component control : List.of(air, reserve, action, qi)) {
+        UIComponent air = root.childById(UIComponent.class, "breathing-air");
+        UIComponent reserve = root.childById(UIComponent.class, "breathing-reserve");
+        UIComponent action = root.childById(UIComponent.class, "breathing-start");
+        UIComponent qi = root.childById(UIComponent.class, "breathing-qi");
+        // owo 0.13 已无 zIndex，同一场景按子组件顺序绘制：控件须与画布同属一个场景且排在画布之后。
+        List<UIComponent> layers = canvas.parent().children();
+        for (UIComponent control : List.of(air, reserve, action, qi)) {
             requireInside(canvas, control);
-            require(control.zIndex() > canvas.zIndex(), "吐纳控件未叠在三维场景之上：" + control.id());
+            require(control.parent() == canvas.parent() && layers.indexOf(control) > layers.indexOf(canvas),
+                    "吐纳控件未叠在三维场景之上：" + control.id());
         }
         int centerX = canvas.x() + canvas.width() / 2;
         int bottomY = canvas.y() + canvas.height();
@@ -185,7 +188,7 @@ final class ManualBreathingJourney {
 
     private static void clickStart(Minecraft client, BodyUiModule module) {
         // 经真实按钮链路开始或确认指引，不直接调用面板方法。
-        click(client, module.cultivationPanel().root().childById(Component.class, "breathing-start"), 0);
+        click(client, module.cultivationPanel().root().childById(UIComponent.class, "breathing-start"), 0);
     }
 
     private void steer(Minecraft client, BodyUiModule module, int button) {
@@ -217,10 +220,10 @@ final class ManualBreathingJourney {
             y = canvas.y() + point.y * canvas.height();
         }
         if (button == 1) {
-            client.screen.mouseReleased(0, 0, 0);
+            client.gui.screen().mouseReleased(mouse(0, 0, 0));
         } else {
-            client.screen.mouseReleased(0, 0, 1);
+            client.gui.screen().mouseReleased(mouse(0, 0, 1));
         }
-        client.screen.mouseClicked(x, y, button);
+        client.gui.screen().mouseClicked(mouse(x, y, button), false);
     }
 }
