@@ -6,7 +6,7 @@ description = '人体周天光迹与内观表现，直接接入通用 UI 的客�
 
 dependencies {
     minecraft libs.minecraft
-    mappings "net.fabricmc:yarn:${libs.versions.yarn.get()}:v2"
+    mappings loom.officialMojangMappings()
     modImplementation libs.fabric.loader
     modImplementation libs.fabric.api
     modImplementation libs.owo

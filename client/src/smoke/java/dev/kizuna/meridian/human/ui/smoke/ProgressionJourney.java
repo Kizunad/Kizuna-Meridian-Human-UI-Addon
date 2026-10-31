@@ -10,24 +10,25 @@ import dev.kizuna.meridian.progression.pb.ProgressionMessages.*;
 import dev.kizuna.meridian.protocol.pb.BodyMessages.BodySnapshot;
 import dev.kizuna.meridian.protocol.pb.HealthHostMessages.*;
 import dev.kizuna.meridian.ui.client.BodyUiModule;
-import net.minecraft.client.MinecraftClient;
-import net.minecraft.client.gui.screen.TitleScreen;
-import net.minecraft.client.gui.widget.ButtonWidget;
-import net.minecraft.client.gui.widget.TextFieldWidget;
-import net.minecraft.client.util.ScreenshotRecorder;
-import net.minecraft.entity.ItemEntity;
-import net.minecraft.item.ItemStack;
-import net.minecraft.registry.Registries;
-import net.minecraft.registry.RegistryKeys;
-import net.minecraft.resource.DataConfiguration;
-import net.minecraft.server.network.ServerPlayerEntity;
-import net.minecraft.util.Hand;
-import net.minecraft.util.Identifier;
-import net.minecraft.util.Util;
+import net.minecraft.Util;
+import net.minecraft.client.Minecraft;
+import net.minecraft.client.Screenshot;
+import net.minecraft.client.gui.components.Button;
+import net.minecraft.client.gui.components.EditBox;
+import net.minecraft.client.gui.screens.TitleScreen;
+import net.minecraft.core.registries.BuiltInRegistries;
+import net.minecraft.core.registries.Registries;
+import net.minecraft.resources.ResourceLocation;
+import net.minecraft.server.level.ServerPlayer;
 import net.minecraft.world.*;
-import net.minecraft.world.gen.GeneratorOptions;
-import net.minecraft.world.gen.WorldPresets;
-import net.minecraft.world.level.LevelInfo;
+import net.minecraft.world.entity.item.ItemEntity;
+import net.minecraft.world.item.ItemStack;
+import net.minecraft.world.level.GameRules;
+import net.minecraft.world.level.GameType;
+import net.minecraft.world.level.LevelSettings;
+import net.minecraft.world.level.WorldDataConfiguration;
+import net.minecraft.world.level.levelgen.WorldOptions;
+import net.minecraft.world.level.levelgen.presets.WorldPresets;
 import java.util.UUID;
 import java.util.Set;
 import java.util.concurrent.CompletableFuture;
@@ -41,22 +42,22 @@ final class ProgressionJourney {
     private final String world = "progression-smoke-" + System.currentTimeMillis();
     private Stage stage = Stage.CREATE;
     // 三卷可能按正常速度播放，且包含检视、响应式与吐纳整体回归，总时限留足 40 分钟。
-    private long deadline = Util.getMeasuringTimeMs() + 2_400_000;
+    private long deadline = Util.getMillis() + 2_400_000;
     private final CultivationJourney cultivation = new CultivationJourney();
     private final ScrollAudioCheck audio = new ScrollAudioCheck();
     private int ticks;
     private CompletableFuture<Void> serverWork;
     private String oldToken;
-    private net.minecraft.client.network.ClientPlayerEntity oldPlayer;
+    private net.minecraft.client.player.LocalPlayer oldPlayer;
     private int newScroll;
     private final AutomaticBreathingJourney automaticBreathing = new AutomaticBreathingJourney();
     private final BodyViewerJourney bodyViewer = new BodyViewerJourney();
     private final ResponsiveJourney responsive = new ResponsiveJourney();
     private final ManualBreathingJourney manualBreathing = new ManualBreathingJourney();
 
-    boolean tick(MinecraftClient client, BodyUiModule module) throws Exception {
+    boolean tick(Minecraft client, BodyUiModule module) throws Exception {
         // 每一阶段等待真实权威或屏幕事实；右键解锁与播放结束分别验证。
-        if (Util.getMeasuringTimeMs() > deadline) {
+        if (Util.getMillis() > deadline) {
             throw new IllegalStateException("残卷闭环超时：" + stage + " / " + InventoryUiClient.runtime().protocolError());
         }
         if (serverWork != null) {
@@ -66,17 +67,17 @@ final class ProgressionJourney {
             serverWork.join();
             serverWork = null;
         }
-        if (stage == Stage.CREATE && client.currentScreen instanceof TitleScreen && client.getOverlay() == null) {
-            var info = new LevelInfo(world, GameMode.SURVIVAL, false, Difficulty.PEACEFUL, true,
-                    new GameRules(), DataConfiguration.SAFE_MODE);
+        if (stage == Stage.CREATE && client.screen instanceof TitleScreen && client.getOverlay() == null) {
+            var info = new LevelSettings(world, GameType.SURVIVAL, false, Difficulty.PEACEFUL, true,
+                    new GameRules(), WorldDataConfiguration.DEFAULT);
             next(Stage.LOCKED);
-            client.createIntegratedServerLoader().createAndStart(world, info, new GeneratorOptions(1L, false, false),
-                    registry -> registry.get(RegistryKeys.WORLD_PRESET).getOrThrow(WorldPresets.FLAT).createDimensionsRegistryHolder());
+            client.createWorldOpenFlows().createFreshLevel(world, info, new WorldOptions(1L, false, false),
+                    registry -> registry.registryOrThrow(Registries.WORLD_PRESET).getOrThrow(WorldPresets.FLAT).createWorldDimensions());
             return false;
         }
         if (stage == Stage.RESTART && client.player == null && client.getOverlay() == null) {
             next(Stage.REJOIN);
-            client.createIntegratedServerLoader().start(new TitleScreen(), world);
+            client.createWorldOpenFlows().loadLevel(new TitleScreen(), world);
             return false;
         }
         if (client.player == null || !ClientProgression.synchronizedWithServer()) {
@@ -100,10 +101,10 @@ final class ProgressionJourney {
                     // 登录时自然扩散已经开始，出生总量必须包含在途，不能只数内腔。
                     double qi = dev.kizuna.meridian.protocol.BodyProtobuf.fromMessage(snapshot).totalQi();
                     require(Math.abs(qi - .36) < 1e-9, "出生密度余额变化");
-                    var item = Registries.ITEM.get(new Identifier("meridian_progression", "fragment_scroll"));
-                    var drop = new ItemEntity(player.getWorld(), player.getX(), player.getY(), player.getZ(), new ItemStack(item));
-                    drop.setPickupDelay(0);
-                    player.getServerWorld().spawnEntity(drop);
+                    var item = BuiltInRegistries.ITEM.get(new ResourceLocation("meridian_progression", "fragment_scroll"));
+                    var drop = new ItemEntity(player.level(), player.getX(), player.getY(), player.getZ(), new ItemStack(item));
+                    drop.setPickUpDelay(0);
+                    player.serverLevel().addFreshEntity(drop);
                 });
                 next(Stage.PICKUP);
             }
@@ -116,12 +117,12 @@ final class ProgressionJourney {
                 next(Stage.CANCEL);
             }
             case CANCEL -> {
-                if (!(client.currentScreen instanceof ScrollScreen screen)) {
+                if (!(client.screen instanceof ScrollScreen screen)) {
                     return false;
                 }
                 if (ticks == 40) {
                     // 正文中重排窗口，确保 init 不会再播放展开声或叠加低风。
-                    screen.resize(client, client.getWindow().getScaledWidth(), client.getWindow().getScaledHeight());
+                    screen.resize(client, client.getWindow().getGuiScaledWidth(), client.getWindow().getGuiScaledHeight());
                 }
                 if (ticks < 60) {
                     return false;
@@ -143,14 +144,14 @@ final class ProgressionJourney {
                 next(Stage.EARLY);
             }
             case EARLY -> {
-                if (!(client.currentScreen instanceof ScrollScreen screen)) {
+                if (!(client.screen instanceof ScrollScreen screen)) {
                     return false;
                 }
                 finish(screen.sessionId());
                 next(Stage.COMPLETED);
             }
             case COMPLETED -> {
-                if (client.currentScreen instanceof ScrollScreen || ticks < 10) {
+                if (client.screen instanceof ScrollScreen || ticks < 10) {
                     return false;
                 }
                 require(ClientProgression.canCultivate(), "立即完成播放撤销了右键解锁");
@@ -159,21 +160,21 @@ final class ProgressionJourney {
                 next(Stage.READ);
             }
             case READ -> {
-                if (!(client.currentScreen instanceof ScrollScreen screen)) {
+                if (!(client.screen instanceof ScrollScreen screen)) {
                     return false;
                 }
                 oldToken = screen.sessionId();
                 // 先以正常速度完成展开和几秒正文，再用真实空格读完，覆盖两种音频时序。
-                org.lwjgl.glfw.GLFW.glfwFocusWindow(client.getWindow().getHandle());
+                org.lwjgl.glfw.GLFW.glfwFocusWindow(client.getWindow().getWindow());
                 next(Stage.READING);
             }
             case READING -> {
                 if (ticks == 100) {
                     audio.body(client);
-                    ScreenshotRecorder.saveScreenshot(client.runDirectory, "qi-notes-reading.png", client.getFramebuffer(), ignored -> {});
+                    Screenshot.grab(client.gameDirectory, "qi-notes-reading.png", client.getMainRenderTarget(), ignored -> {});
                     DesktopKeyboard.space(true);
                 }
-                if (client.currentScreen instanceof ScrollScreen) {
+                if (client.screen instanceof ScrollScreen) {
                     return false;
                 }
                 DesktopKeyboard.space(false);
@@ -191,14 +192,14 @@ final class ProgressionJourney {
             case LOCKED_MENU -> {
                 // 只读札记时仅显示经脉，隐藏与直接打开必须使用相同的权威进度投影。
                 if (ticks == 1) {
-                    client.options.getGuiScale().setValue(2);
-                    client.onResolutionChanged();
+                    client.options.guiScale().set(2);
+                    client.resizeDisplay();
                     verifyFeatureMenu(client, Set.of("meridian_ui:meridians"));
                     requireFeatureDenied("meridian_ui:cultivation");
                     requireFeatureDenied("meridian_ui:practice");
                 }
                 if (ticks == 20) {
-                    ScreenshotRecorder.saveScreenshot(client.runDirectory, "cultivation-menu-notes.png", client.getFramebuffer(), ignored -> {});
+                    Screenshot.grab(client.gameDirectory, "cultivation-menu-notes.png", client.getMainRenderTarget(), ignored -> {});
                     client.setScreen(null);
                     next(Stage.NEW_SCROLL_SETUP);
                 }
@@ -211,27 +212,27 @@ final class ProgressionJourney {
                     audio.ended(client, true);
                 }
                 String item = newScroll == 0 ? "gathering_scroll" : "middle_jiao_scroll";
-                server(client, player -> command(player, "item replace entity " + player.getEntityName()
+                server(client, player -> command(player, "item replace entity " + player.getScoreboardName()
                         + " weapon.mainhand with meridian_progression:" + item));
                 next(Stage.NEW_SCROLL_OPEN);
             }
             case NEW_SCROLL_OPEN -> {
                 String item = newScroll == 0 ? "gathering_scroll" : "middle_jiao_scroll";
-                if (!Registries.ITEM.getId(client.player.getMainHandStack().getItem()).getPath().equals(item)) {
+                if (!BuiltInRegistries.ITEM.getKey(client.player.getMainHandItem().getItem()).getPath().equals(item)) {
                     return false;
                 }
                 use(client);
                 next(Stage.NEW_SCROLL_READING);
             }
             case NEW_SCROLL_READING -> {
-                if (client.currentScreen instanceof ScrollScreen && ticks == 20) {
-                    org.lwjgl.glfw.GLFW.glfwFocusWindow(client.getWindow().getHandle());
+                if (client.screen instanceof ScrollScreen && ticks == 20) {
+                    org.lwjgl.glfw.GLFW.glfwFocusWindow(client.getWindow().getWindow());
                     DesktopKeyboard.space(true);
                 }
-                if (client.currentScreen instanceof ScrollScreen && ticks == 90) {
+                if (client.screen instanceof ScrollScreen && ticks == 90) {
                     // 每卷各留一张正文截图，核对播放的是本卷正文而非札记。
-                    ScreenshotRecorder.saveScreenshot(client.runDirectory,
-                            newScroll == 0 ? "gathering-reading.png" : "middle-jiao-reading.png", client.getFramebuffer(), ignored -> {});
+                    Screenshot.grab(client.gameDirectory,
+                            newScroll == 0 ? "gathering-reading.png" : "middle-jiao-reading.png", client.getMainRenderTarget(), ignored -> {});
                 }
                 boolean read = newScroll == 0 ? ClientProgression.requireProgress().getGatheringScrollRead()
                         : ClientProgression.requireProgress().getMiddleJiaoScrollRead();
@@ -239,9 +240,9 @@ final class ProgressionJourney {
                     return false;
                 }
                 DesktopKeyboard.space(false);
-                require(client.currentScreen instanceof ScrollScreen, "即时解锁意外关闭了新卷画面");
+                require(client.screen instanceof ScrollScreen, "即时解锁意外关闭了新卷画面");
                 // 未播放完直接关闭，后续菜单仍须出现本卷授予的入口。
-                client.currentScreen.close();
+                client.screen.onClose();
                 next(Stage.NEW_SCROLL_MENU);
             }
             case NEW_SCROLL_MENU -> {
@@ -258,13 +259,13 @@ final class ProgressionJourney {
                 if (ticks < 20) {
                     return false;
                 }
-                ScreenshotRecorder.saveScreenshot(client.runDirectory,
-                        newScroll == 0 ? "cultivation-menu-gathering.png" : "cultivation-menu-all.png", client.getFramebuffer(), ignored -> {});
+                Screenshot.grab(client.gameDirectory,
+                        newScroll == 0 ? "cultivation-menu-gathering.png" : "cultivation-menu-all.png", client.getMainRenderTarget(), ignored -> {});
                 client.setScreen(null);
                 if (newScroll++ == 0) {
                     next(Stage.NEW_SCROLL_SETUP);
                 } else {
-                    server(client, player -> command(player, "item replace entity " + player.getEntityName()
+                    server(client, player -> command(player, "item replace entity " + player.getScoreboardName()
                             + " weapon.mainhand with meridian_progression:fragment_scroll"));
                     next(Stage.RESTORE_NOTES);
                 }
@@ -299,7 +300,7 @@ final class ProgressionJourney {
                 next(Stage.RESET_READING);
             }
             case RESET_READING -> {
-                if (!(client.currentScreen instanceof ScrollScreen screen)) {
+                if (!(client.screen instanceof ScrollScreen screen)) {
                     return false;
                 }
                 oldToken = screen.sessionId();
@@ -316,7 +317,7 @@ final class ProgressionJourney {
                     return false;
                 }
                 require(module.meridianPanel() == null, "重置未关闭经脉内观窗口");
-                require(!(client.currentScreen instanceof ScrollScreen), "重置未关闭进行中的残卷阅读");
+                require(!(client.screen instanceof ScrollScreen), "重置未关闭进行中的残卷阅读");
                 require(InventoryUiClient.runtime().workspace().features("修炼").isEmpty(), "重置菜单仍显示修炼");
                 requireFeatureDenied("meridian_ui:cultivation");
                 requireFeatureDenied("meridian_ui:practice");
@@ -331,7 +332,7 @@ final class ProgressionJourney {
                 client.setScreen(null);
                 server(client, player -> {
                     command(player, "meridian progression unlock");
-                    player.getInventory().clear();
+                    player.getInventory().clearContent();
                 });
                 next(Stage.RESTORE);
             }
@@ -340,8 +341,8 @@ final class ProgressionJourney {
                     return false;
                 }
                 next(Stage.RESTART);
-                client.world.disconnect();
-                client.disconnect(new TitleScreen());
+                client.level.disconnect();
+                client.clearLevel(new TitleScreen());
             }
             case REJOIN -> {
                 if (ticks < 30) {
@@ -366,7 +367,7 @@ final class ProgressionJourney {
                     require(ProgressionFabric.canCultivate(player), "重启后身体未解锁");
                     // 单击只伤一个随机部位；重复原版致死伤害直到人体判死，再走真实重生包。
                     for (int hit = 0; hit < 128 && player.isAlive(); hit++) {
-                        player.timeUntilRegen = 0;
+                        player.invulnerableTime = 0;
                         player.kill();
                     }
                     require(!player.isAlive(), "真实伤害没有触发身体死亡");
@@ -378,7 +379,7 @@ final class ProgressionJourney {
                     return false;
                 }
                 require(ClientProgression.canCultivate(), "死亡清除了阅读进度");
-                client.player.requestRespawn();
+                client.player.respawn();
                 next(Stage.RESPAWN);
             }
             case RESPAWN -> {
@@ -404,18 +405,18 @@ final class ProgressionJourney {
         System.out.println("PROGRESSION_SMOKE_STAGE " + stage);
     }
 
-    private void server(MinecraftClient client, Consumer<ServerPlayerEntity> action) {
+    private void server(Minecraft client, Consumer<ServerPlayer> action) {
         // 所有身体、命令、物品和实体操作在整合服主线程执行，异常回传客户端测试。
-        UUID playerId = client.player.getUuid();
-        var server = client.getServer();
-        serverWork = CompletableFuture.runAsync(() -> action.accept(server.getPlayerManager().getPlayer(playerId)), server);
+        UUID playerId = client.player.getUUID();
+        var server = client.getSingleplayerServer();
+        serverWork = CompletableFuture.runAsync(() -> action.accept(server.getPlayerList().getPlayer(playerId)), server);
     }
 
-    private static BodySnapshot inspect(ServerPlayerEntity player) {
+    private static BodySnapshot inspect(ServerPlayer player) {
         // 只读检查复用正式宿主协议，不反射访问 Human 私有存档。
         try {
             var request = HealthHostRequest.newBuilder().setProtocolVersion(1).setRequestId(UUID.randomUUID().toString())
-                    .setSubjectId(player.getUuidAsString()).setInspect(true).build();
+                    .setSubjectId(player.getStringUUID()).setInspect(true).build();
             var response = HealthHostResponse.parseFrom(new HumanHealthHost().exchange(request.toByteArray()));
             require(response.hasBody(), "身体宿主拒绝查询：" + response);
             return response.getBody();
@@ -424,27 +425,27 @@ final class ProgressionJourney {
         }
     }
 
-    private static void command(ServerPlayerEntity player, String command) {
+    private static void command(ServerPlayer player, String command) {
         // 与管理员在游戏中执行同一命令树，不绕过权限或身体事务。
-        player.getServer().getCommandManager().executeWithPrefix(player.getCommandSource().withLevel(4), command);
+        player.getServer().getCommands().performPrefixedCommand(player.createCommandSourceStack().withPermission(4), command);
     }
 
-    private static void verifyFeatureMenu(MinecraftClient client, Set<String> expected) {
+    private static void verifyFeatureMenu(Minecraft client, Set<String> expected) {
         // 真实服务端解锁后检查目录与屏幕按钮，防止只改数据列表却留下旧菜单入口。
         var runtime = InventoryUiClient.runtime();
         var features = runtime.workspace().features("修炼");
         Set<String> actual = features.stream().map(feature -> feature.id()).collect(java.util.stream.Collectors.toSet());
         require(actual.equals(expected), "修炼菜单权限不匹配：" + actual);
         runtime.openWorkspace();
-        var screen = client.currentScreen;
-        var menu = screen.children().stream().filter(ButtonWidget.class::isInstance).map(ButtonWidget.class::cast)
+        var screen = client.screen;
+        var menu = screen.children().stream().filter(Button.class::isInstance).map(Button.class::cast)
                 .filter(button -> button.getMessage().getString().equals("功能")).findFirst().orElseThrow();
         screen.mouseClicked(menu.getX() + menu.getWidth() / 2.0, menu.getY() + menu.getHeight() / 2.0, 0);
         screen.mouseReleased(menu.getX() + menu.getWidth() / 2.0, menu.getY() + menu.getHeight() / 2.0, 0);
-        var search = screen.children().stream().filter(TextFieldWidget.class::isInstance).map(TextFieldWidget.class::cast)
+        var search = screen.children().stream().filter(EditBox.class::isInstance).map(EditBox.class::cast)
                 .findFirst().orElseThrow();
-        search.setText("修炼");
-        var labels = screen.children().stream().filter(ButtonWidget.class::isInstance).map(ButtonWidget.class::cast)
+        search.setValue("修炼");
+        var labels = screen.children().stream().filter(Button.class::isInstance).map(Button.class::cast)
                 .map(button -> button.getMessage().getString()).toList();
         require(labels.stream().noneMatch(label -> label.startsWith("固定 ") || label.startsWith("取消固定 ")),
                 "菜单仍包含固定或取消固定按钮");
@@ -466,15 +467,15 @@ final class ProgressionJourney {
         require(denied, "直接打开绕过残卷权限：" + featureId);
     }
 
-    private static boolean holdingScroll(MinecraftClient client) {
+    private static boolean holdingScroll(Minecraft client) {
         // 自动拾取必须先被原版库存同步到客户端才允许右键。
-        return Registries.ITEM.getId(client.player.getMainHandStack().getItem())
-                .equals(new Identifier("meridian_progression", "fragment_scroll"));
+        return BuiltInRegistries.ITEM.getKey(client.player.getMainHandItem().getItem())
+                .equals(new ResourceLocation("meridian_progression", "fragment_scroll"));
     }
 
-    private static void use(MinecraftClient client) {
+    private static void use(Minecraft client) {
         // 真实 use-item 网络消息触发服务端 Item.use，读卷不是管理员解锁。
-        client.interactionManager.interactItem(client.player, Hand.MAIN_HAND);
+        client.gameMode.useItem(client.player, InteractionHand.MAIN_HAND);
     }
 
     private static void finish(String token) {

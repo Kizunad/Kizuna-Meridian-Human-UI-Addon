@@ -16,8 +16,8 @@ import io.wispforest.owo.ui.core.Component;
 import io.wispforest.owo.ui.core.OwoUIDrawContext;
 import net.fabricmc.fabric.api.client.networking.v1.ClientPlayNetworking;
 import net.fabricmc.fabric.api.networking.v1.PacketByteBufs;
-import net.minecraft.client.MinecraftClient;
-import net.minecraft.util.Identifier;
+import net.minecraft.client.Minecraft;
+import net.minecraft.resources.ResourceLocation;
 import org.lwjgl.glfw.GLFW;
 import java.util.ArrayList;
 import java.util.List;
@@ -176,7 +176,7 @@ public final class HumanCultivationPanel implements MeridianSceneExtension {
                 gateDial(context, dialLeft, clock());
             }
             if (hovered) {
-                tooltip(net.minecraft.text.Text.literal("中焦八脉开通后运转。按住 G 增推力，松开减速。\n"
+                tooltip(net.minecraft.network.chat.Component.literal("中焦八脉开通后运转。按住 G 增推力，松开减速。\n"
                         + "关口：小圈缩到白圈并变绿时按空格；红色表示还没到或已错过。\n"
                         + "只在呼气阶段能冲关，吸气时请等待。\n"
                         + "勾选自动：持续消耗脑耐力、不耗精力，低于停止线自动停，提纯效率低于手动。\n"
@@ -299,7 +299,7 @@ public final class HumanCultivationPanel implements MeridianSceneExtension {
 
         private void pollKeys() {
             // 边沿发送避免按住键每帧刷包；窗口关闭单独撤销会话。
-            long handle = MinecraftClient.getInstance().getWindow().getHandle();
+            long handle = Minecraft.getInstance().getWindow().getWindow();
             boolean push = state.getRunning() && !state.getAutomatic() && GLFW.glfwGetKey(handle, GLFW.GLFW_KEY_G) == GLFW.GLFW_PRESS;
             boolean strike = state.getRunning() && !state.getAutomatic() && GLFW.glfwGetKey(handle, GLFW.GLFW_KEY_SPACE) == GLFW.GLFW_PRESS;
             if (push != lastPush) {
@@ -349,7 +349,7 @@ public final class HumanCultivationPanel implements MeridianSceneExtension {
         @Override
         public void close() {
             // 连接断开是生命周期结束；还在线时明确通知停止，服务端统一归还在途。
-            if (MinecraftClient.getInstance().getNetworkHandler() != null && (state.getRunning() || state.getMobilizing())) {
+            if (Minecraft.getInstance().getConnection() != null && (state.getRunning() || state.getMobilizing())) {
                 send(CultivationInput.Operation.STOP);
             }
             canvas.effects(List.of(), 0xFFFFE48A);
@@ -361,7 +361,7 @@ public final class HumanCultivationPanel implements MeridianSceneExtension {
                     .setKeyTick(body.getSettledAt().getElapsedMillis() / 50).build();
             var buffer = PacketByteBufs.create();
             buffer.writeBytes(request.toByteArray());
-            ClientPlayNetworking.send(new Identifier("meridian_human", "cultivation"), buffer);
+            ClientPlayNetworking.send(new ResourceLocation("meridian_human", "cultivation"), buffer);
         }
 
         private double clock() {
@@ -432,23 +432,23 @@ public final class HumanCultivationPanel implements MeridianSceneExtension {
 
         private void centered(OwoUIDrawContext context, String value, int center, int top, int color, float scale) {
             // 状态字放大居中，玩家余光就能看到“按空格！”或“吸气中”。
-            var font = MinecraftClient.getInstance().textRenderer;
-            float left = x + center - font.getWidth(value) * scale / 2;
-            context.drawText(net.minecraft.text.Text.literal(value), left, y + top, scale, color);
+            var font = Minecraft.getInstance().font;
+            float left = x + center - font.width(value) * scale / 2;
+            context.drawText(net.minecraft.network.chat.Component.literal(value), left, y + top, scale, color);
         }
 
         private void paragraph(OwoUIDrawContext context, String value, int left, int top, int maxWidth, int color) {
             // 说明按实际宽度折行，窄窗口下也不截掉停止线、效率等关键限制；最多三行以免压到底部提示。
-            var font = MinecraftClient.getInstance().textRenderer;
-            var lines = font.wrapLines(net.minecraft.text.Text.literal(value), maxWidth);
+            var font = Minecraft.getInstance().font;
+            var lines = font.split(net.minecraft.network.chat.Component.literal(value), maxWidth);
             for (int line = 0; line < Math.min(3, lines.size()); line++) {
-                context.drawText(font, lines.get(line), x + left, y + top + line * 11, color, false);
+                context.drawString(font, lines.get(line), x + left, y + top + line * 11, color, false);
             }
         }
 
         private static String trim(String value, int maxWidth) {
             // 单行数据超宽时截断尾部，不让文字压进右侧关口盘。
-            return MinecraftClient.getInstance().textRenderer.trimToWidth(value, Math.max(0, maxWidth));
+            return Minecraft.getInstance().font.plainSubstrByWidth(value, Math.max(0, maxWidth));
         }
 
         private static double density(QiInventory inventory) {
@@ -473,7 +473,7 @@ public final class HumanCultivationPanel implements MeridianSceneExtension {
 
         private void text(OwoUIDrawContext context, String text, int left, int top, int color) {
             // 控制条使用常规文本层，始终位于3D帧缓冲合成之后。
-            context.drawText(MinecraftClient.getInstance().textRenderer, text, x + left, y + top, color, false);
+            context.drawString(Minecraft.getInstance().font, text, x + left, y + top, color, false);
         }
     }
 }

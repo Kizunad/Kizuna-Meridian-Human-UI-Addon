@@ -9,9 +9,10 @@ import dev.kizuna.meridian.ui.client.BodyInformation;
 import dev.kizuna.meridian.ui.client.BodyScene;
 import dev.kizuna.meridian.ui.client.BodyUiModule;
 import io.wispforest.owo.ui.core.Component;
-import net.minecraft.client.MinecraftClient;
 import java.util.List;
 import java.util.Set;
+import net.minecraft.client.Minecraft;
+
 import static dev.kizuna.meridian.human.ui.smoke.UiChecks.*;
 
 /** 整合服内的“检视”回归：真实玩家身体的五层模型、点击选取、聚焦、信息、刷新、勾选组合与关窗清理。 */
@@ -26,7 +27,7 @@ final class BodyViewerJourney {
     private float pitch;
     private long revision;
 
-    boolean tick(MinecraftClient client, BodyUiModule module) {
+    boolean tick(Minecraft client, BodyUiModule module) {
         // 每阶段等待真实组件、相机或服务端推送就绪；不向客户端注入伪造身体。完成后调用方仍会逐 tick 询问，直接返回。
         if (stage == Stage.DONE) {
             return true;
@@ -35,8 +36,8 @@ final class BodyViewerJourney {
         require(ticks < 1200, "检视回归阶段超时：" + stage);
         switch (stage) {
             case OPEN -> {
-                client.options.getGuiScale().setValue(2);
-                client.onResolutionChanged();
+                client.options.guiScale().set(2);
+                client.resizeDisplay();
                 InventoryUiClient.runtime().openWorkspace();
                 window = InventoryUiClient.runtime().open("meridian_ui:body", null).key();
                 next(Stage.SURFACE);
@@ -104,12 +105,12 @@ final class BodyViewerJourney {
                     yaw = module.panel().canvas().camera().yaw();
                     pitch = module.panel().canvas().camera().pitch();
                     revision = body(module).getRevision();
-                    var server = client.getServer();
-                    var playerId = client.player.getUuid();
+                    var server = client.getSingleplayerServer();
+                    var playerId = client.player.getUUID();
                     server.execute(() -> {
                         // 与管理员在游戏中执行同一命令树；命令按来源玩家找到身体并走权威事务。
-                        var player = server.getPlayerManager().getPlayer(playerId);
-                        server.getCommandManager().executeWithPrefix(player.getCommandSource().withLevel(4), "meridian zhenyuan fill");
+                        var player = server.getPlayerList().getPlayer(playerId);
+                        server.getCommands().performPrefixedCommand(player.createCommandSourceStack().withPermission(4), "meridian zhenyuan fill");
                     });
                     next(Stage.REFRESH);
                 }
@@ -124,8 +125,8 @@ final class BodyViewerJourney {
                         && module.panel().selectedId().equals("heart"), "快照刷新覆盖了镜头或选中对象");
                 // 经真实 Screen 中键回到全身，面板选择也一起清空。
                 var canvas = module.panel().canvas();
-                client.currentScreen.mouseClicked(canvas.x() + canvas.width() / 2.0, canvas.y() + canvas.height() / 2.0, 2);
-                client.currentScreen.mouseReleased(canvas.x() + canvas.width() / 2.0, canvas.y() + canvas.height() / 2.0, 2);
+                client.screen.mouseClicked(canvas.x() + canvas.width() / 2.0, canvas.y() + canvas.height() / 2.0, 2);
+                client.screen.mouseReleased(canvas.x() + canvas.width() / 2.0, canvas.y() + canvas.height() / 2.0, 2);
                 next(Stage.OVERVIEW);
             }
             case OVERVIEW -> {
@@ -204,14 +205,14 @@ final class BodyViewerJourney {
         return stage == Stage.DONE;
     }
 
-    private void checkboxes(MinecraftClient client, BodyUiModule module) {
+    private void checkboxes(Minecraft client, BodyUiModule module) {
         // 通过左侧真实勾选控件叠加各层；隐藏所在层会清除选择，全部关闭后不能再选中模型。
         var panel = module.panel();
         panel.layer("skeleton");
         for (String layer : List.of("muscles", "organs", "meridians")) {
             Component checkbox = panel.root().childById(Component.class, "layer-toggle-" + layer);
-            client.currentScreen.mouseClicked(checkbox.x() + 12, checkbox.y() + 13, 0);
-            client.currentScreen.mouseReleased(checkbox.x() + 12, checkbox.y() + 13, 0);
+            client.screen.mouseClicked(checkbox.x() + 12, checkbox.y() + 13, 0);
+            client.screen.mouseReleased(checkbox.x() + 12, checkbox.y() + 13, 0);
         }
         require(panel.visibleLayers().equals(Set.of("skeleton", "muscles", "organs", "meridians")), "勾选没有保留多层组合");
         panel.select(visual("left_eye"));

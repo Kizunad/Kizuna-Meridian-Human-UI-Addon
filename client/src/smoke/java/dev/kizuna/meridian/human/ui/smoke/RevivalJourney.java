@@ -8,18 +8,18 @@ import dev.kizuna.meridian.ui.client.BodyUiModule;
 import io.wispforest.owo.ui.component.LabelComponent;
 import net.fabricmc.fabric.api.client.event.lifecycle.v1.ClientTickEvents;
 import net.fabricmc.loader.api.FabricLoader;
-import net.minecraft.client.MinecraftClient;
-import net.minecraft.client.gui.screen.AccessibilityOnboardingScreen;
-import net.minecraft.client.gui.screen.TitleScreen;
-import net.minecraft.client.util.ScreenshotRecorder;
-import net.minecraft.registry.RegistryKeys;
-import net.minecraft.resource.DataConfiguration;
+import net.minecraft.client.Minecraft;
+import net.minecraft.client.Screenshot;
+import net.minecraft.client.gui.screens.AccessibilityOnboardingScreen;
+import net.minecraft.client.gui.screens.TitleScreen;
+import net.minecraft.core.registries.Registries;
 import net.minecraft.world.Difficulty;
-import net.minecraft.world.GameMode;
-import net.minecraft.world.GameRules;
-import net.minecraft.world.gen.GeneratorOptions;
-import net.minecraft.world.gen.WorldPresets;
-import net.minecraft.world.level.LevelInfo;
+import net.minecraft.world.level.GameRules;
+import net.minecraft.world.level.GameType;
+import net.minecraft.world.level.LevelSettings;
+import net.minecraft.world.level.WorldDataConfiguration;
+import net.minecraft.world.level.levelgen.WorldOptions;
+import net.minecraft.world.level.levelgen.presets.WorldPresets;
 
 import static com.google.common.base.Preconditions.checkState;
 
@@ -42,13 +42,13 @@ final class RevivalJourney {
         ClientTickEvents.END_CLIENT_TICK.register(this::tick);
     }
 
-    private void tick(MinecraftClient client) {
+    private void tick(Minecraft client) {
         // 创建真实世界并等待服务器投影，不注入展示快照或修改身体账本。
         checkState(++totalTicks < TIMEOUT_TICKS, "复活界面验收超时：" + stage);
-        if (client.currentScreen instanceof AccessibilityOnboardingScreen) {
+        if (client.screen instanceof AccessibilityOnboardingScreen) {
             client.setScreen(new TitleScreen());
         }
-        if (stage == Stage.CREATE && client.currentScreen instanceof TitleScreen && client.getOverlay() == null) {
+        if (stage == Stage.CREATE && client.screen instanceof TitleScreen && client.getOverlay() == null) {
             createWorld(client);
             return;
         }
@@ -65,7 +65,7 @@ final class RevivalJourney {
         advance(client);
     }
 
-    private void advance(MinecraftClient client) {
+    private void advance(Minecraft client) {
         // 界面操作在玩家和进度同步完成后按服务器回执逐步推进。
         switch (stage) {
             case UNLOCK -> {
@@ -85,19 +85,19 @@ final class RevivalJourney {
         }
     }
 
-    private void createWorld(MinecraftClient client) {
+    private void createWorld(Minecraft client) {
         // 固定种子平坦世界保持启动开销小，仍使用正式玩家与健康宿主。
         String world = "revival-" + System.currentTimeMillis();
-        var info = new LevelInfo(world, GameMode.SURVIVAL, false /* hardcore */, Difficulty.PEACEFUL,
-                true /* allowCommands */, new GameRules(), DataConfiguration.SAFE_MODE);
-        var options = new GeneratorOptions(WORLD_SEED, false /* structures */, false /* bonusChest */);
+        var info = new LevelSettings(world, GameType.SURVIVAL, false /* hardcore */, Difficulty.PEACEFUL,
+                true /* allowCommands */, new GameRules(), WorldDataConfiguration.DEFAULT);
+        var options = new WorldOptions(WORLD_SEED, false /* structures */, false /* bonusChest */);
         next(Stage.UNLOCK);
-        client.createIntegratedServerLoader().createAndStart(world, info, options,
-                registry -> registry.get(RegistryKeys.WORLD_PRESET).getOrThrow(WorldPresets.FLAT)
-                        .createDimensionsRegistryHolder());
+        client.createWorldOpenFlows().createFreshLevel(world, info, options,
+                registry -> registry.registryOrThrow(Registries.WORLD_PRESET).getOrThrow(WorldPresets.FLAT)
+                        .createWorldDimensions());
     }
 
-    private void initial(MinecraftClient client) {
+    private void initial(Minecraft client) {
         // 出生样例先显示 18 岁、62 年，确认面板真的绑定当前玩家。
         if (!ClientProgression.canInspect() || ticks < VIEW_SETTLE_TICKS) {
             return;
@@ -111,22 +111,22 @@ final class RevivalJourney {
         next(Stage.DIE);
     }
 
-    private void respawn(MinecraftClient client) {
+    private void respawn(Minecraft client) {
         // 通过客户端重生包进入原版玩家替换与 Human AFTER_RESPAWN。
-        if (client.player.isDead()) {
-            client.player.requestRespawn();
+        if (client.player.isDeadOrDying()) {
+            client.player.respawn();
             client.setScreen(null);
             next(Stage.REVIVED);
         }
     }
 
-    private void revived(MinecraftClient client) {
+    private void revived(Minecraft client) {
         // 等服务器新快照扣费后再检查组件，不能把旧窗口文字当作刷新成功。
-        if (client.player.isDead() || module.snapshot() == null
+        if (client.player.isDeadOrDying() || module.snapshot() == null
                 || module.snapshot().getVitality().getSpentLifespanSeconds() == 0) {
             return;
         }
-        if (module.panel() == null || !(client.currentScreen instanceof WorkspaceScreen)) {
+        if (module.panel() == null || !(client.screen instanceof WorkspaceScreen)) {
             open(client);
             return;
         }
@@ -135,12 +135,12 @@ final class RevivalJourney {
         }
         verify("年龄 / 寿元：18.0 年 / 61.0 年");
         capture(client, "revival-after-scale-2.png");
-        client.options.getGuiScale().setValue(LARGE_SCALE);
-        client.onResolutionChanged();
+        client.options.guiScale().set(LARGE_SCALE);
+        client.resizeDisplay();
         next(Stage.LARGE);
     }
 
-    private void large(MinecraftClient client) {
+    private void large(Minecraft client) {
         // 缩放只改变布局，寿元行仍由同一权威快照生成。
         if (ticks < VIEW_SETTLE_TICKS) {
             return;
@@ -149,13 +149,13 @@ final class RevivalJourney {
         capture(client, "revival-after-scale-3.png");
         System.out.println("REVIVAL_UI_OK age=18.0 remaining=61.0 scales=2,3 actual-respawn");
         next(Stage.DONE);
-        client.scheduleStop();
+        client.stop();
     }
 
-    private void open(MinecraftClient client) {
+    private void open(Minecraft client) {
         // 使用玩家实际打开检视的入口，保留授权和订阅检查。
-        client.options.getGuiScale().setValue(NORMAL_SCALE);
-        client.onResolutionChanged();
+        client.options.guiScale().set(NORMAL_SCALE);
+        client.resizeDisplay();
         InventoryUiClient.runtime().openWorkspace();
         InventoryUiClient.runtime().open("meridian_ui:body", null);
         ticks = 0;
@@ -167,22 +167,22 @@ final class RevivalJourney {
         checkState(label.text().getString().startsWith(expected), "寿元行不符：" + label.text().getString());
     }
 
-    private static void command(MinecraftClient client, String command) {
+    private static void command(Minecraft client, String command) {
         // 权威操作通过服务端命令树；客户端不直接访问身体 Store。
-        var server = client.getServer();
-        var id = client.player.getUuid();
+        var server = client.getSingleplayerServer();
+        var id = client.player.getUUID();
         server.execute(() -> {
-            var player = server.getPlayerManager().getPlayer(id);
-            int result = server.getCommandManager().executeWithPrefix(
-                    player.getCommandSource().withLevel(OP_LEVEL), command);
+            var player = server.getPlayerList().getPlayer(id);
+            int result = server.getCommands().performPrefixedCommand(
+                    player.createCommandSourceStack().withPermission(OP_LEVEL), command);
             checkState(result == 1, "验收命令失败：" + command);
         });
     }
 
-    private static void capture(MinecraftClient client, String name) {
+    private static void capture(Minecraft client, String name) {
         // 保存真实帧缓冲，组件文字断言独立于截图。
-        checkState(client.currentScreen instanceof WorkspaceScreen, "检视工作区没有实际显示");
-        ScreenshotRecorder.saveScreenshot(client.runDirectory, name, client.getFramebuffer(), ignored -> {});
+        checkState(client.screen instanceof WorkspaceScreen, "检视工作区没有实际显示");
+        Screenshot.grab(client.gameDirectory, name, client.getMainRenderTarget(), ignored -> {});
     }
 
     private void next(Stage next) {

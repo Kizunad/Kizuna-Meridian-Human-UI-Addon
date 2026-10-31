@@ -12,17 +12,19 @@ import dev.kizuna.meridian.ui.client.EffectSettings;
 import io.wispforest.owo.ui.core.Component;
 import net.fabricmc.fabric.api.client.event.lifecycle.v1.ClientTickEvents;
 import net.fabricmc.loader.api.FabricLoader;
-import net.minecraft.client.MinecraftClient;
-import net.minecraft.client.gui.screen.AccessibilityOnboardingScreen;
-import net.minecraft.client.gui.screen.TitleScreen;
-import net.minecraft.client.util.ScreenshotRecorder;
-import net.minecraft.registry.RegistryKeys;
-import net.minecraft.resource.DataConfiguration;
-import net.minecraft.server.network.ServerPlayerEntity;
+import net.minecraft.client.Minecraft;
+import net.minecraft.client.Screenshot;
+import net.minecraft.client.gui.screens.AccessibilityOnboardingScreen;
+import net.minecraft.client.gui.screens.TitleScreen;
+import net.minecraft.core.registries.Registries;
+import net.minecraft.server.level.ServerPlayer;
 import net.minecraft.world.*;
-import net.minecraft.world.gen.GeneratorOptions;
-import net.minecraft.world.gen.WorldPresets;
-import net.minecraft.world.level.LevelInfo;
+import net.minecraft.world.level.GameRules;
+import net.minecraft.world.level.GameType;
+import net.minecraft.world.level.LevelSettings;
+import net.minecraft.world.level.WorldDataConfiguration;
+import net.minecraft.world.level.levelgen.WorldOptions;
+import net.minecraft.world.level.levelgen.presets.WorldPresets;
 import java.nio.file.Files;
 import java.util.UUID;
 import java.util.concurrent.CompletableFuture;
@@ -57,24 +59,24 @@ final class OpeningEffectsJourney {
         });
     }
 
-    private void tick(MinecraftClient client) throws Exception {
+    private void tick(Minecraft client) throws Exception {
         // 用实际客户端与整合服 tick，所有状态必须等权威回执后再进入下一阶段。
         if (++totalTicks > 6000) {
             throw new IllegalStateException("正常开脉超时：" + stage + " / " + (body == null ? "" : body.getOpeningTask()));
         }
-        if (client.currentScreen instanceof AccessibilityOnboardingScreen) {
+        if (client.screen instanceof AccessibilityOnboardingScreen) {
             client.setScreen(new TitleScreen());
         }
         if (module == null && client.getOverlay() == null) {
             module = FabricLoader.getInstance().getEntrypoints("kizuna_inventory_ui", ClientModule.class).stream()
                     .filter(BodyUiModule.class::isInstance).map(BodyUiModule.class::cast).findFirst().orElseThrow();
         }
-        if (stage == Stage.CREATE && client.currentScreen instanceof TitleScreen && client.getOverlay() == null) {
-            var info = new LevelInfo(world, GameMode.SURVIVAL, false, Difficulty.PEACEFUL, true,
-                    new GameRules(), DataConfiguration.SAFE_MODE);
+        if (stage == Stage.CREATE && client.screen instanceof TitleScreen && client.getOverlay() == null) {
+            var info = new LevelSettings(world, GameType.SURVIVAL, false, Difficulty.PEACEFUL, true,
+                    new GameRules(), WorldDataConfiguration.DEFAULT);
             next(Stage.SETUP);
-            client.createIntegratedServerLoader().createAndStart(world, info, new GeneratorOptions(5, false, false),
-                    registry -> registry.get(RegistryKeys.WORLD_PRESET).getOrThrow(WorldPresets.FLAT).createDimensionsRegistryHolder());
+            client.createWorldOpenFlows().createFreshLevel(world, info, new WorldOptions(5, false, false),
+                    registry -> registry.registryOrThrow(Registries.WORLD_PRESET).getOrThrow(WorldPresets.FLAT).createWorldDimensions());
             return;
         }
         if (client.player == null || !ClientProgression.synchronizedWithServer()) {
@@ -92,7 +94,7 @@ final class OpeningEffectsJourney {
             case SETUP -> {
                 query(client, player -> {
                     command(player, "meridian progression unlock");
-                    command(player, "meridian purity set " + player.getEntityName() + " lumen all 18 0.01");
+                    command(player, "meridian purity set " + player.getScoreboardName() + " lumen all 18 0.01");
                 });
                 next(Stage.OPEN);
             }
@@ -100,12 +102,12 @@ final class OpeningEffectsJourney {
                 if (work != null || !ClientProgression.canCultivate() || ticks < 20) {
                     return;
                 }
-                client.options.getGuiScale().setValue(2);
-                client.onResolutionChanged();
+                client.options.guiScale().set(2);
+                client.resizeDisplay();
                 InventoryUiClient.runtime().openWorkspace();
                 InventoryUiClient.runtime().open("meridian_ui:meridians", null);
                 InventoryUiClient.runtime().open("meridian_ui:cultivation", null);
-                org.lwjgl.glfw.GLFW.glfwFocusWindow(client.getWindow().getHandle());
+                org.lwjgl.glfw.GLFW.glfwFocusWindow(client.getWindow().getWindow());
                 next(Stage.START);
             }
             case START -> {
@@ -165,7 +167,7 @@ final class OpeningEffectsJourney {
                 if (ticks >= 60 && work == null) {
                     capture(client, "opening-05-stable.png");
                     query(client, player -> {
-                        command(player, "meridian purity set " + player.getEntityName() + " lumen all 33 0.01");
+                        command(player, "meridian purity set " + player.getScoreboardName() + " lumen all 33 0.01");
                     });
                     next(Stage.REFILLED);
                 }
@@ -189,7 +191,7 @@ final class OpeningEffectsJourney {
                             .mapToDouble(state -> dev.kizuna.meridian.ui.client.QiDisplay.amount(state.getLumenQi())).sum();
                     double leftQi = 36.25 * .66 - otherQi;
                     require(leftQi > 0, "预警夹具无法保留正储量");
-                    query(client, player -> command(player, "meridian purity set " + player.getEntityName()
+                    query(client, player -> command(player, "meridian purity set " + player.getScoreboardName()
                             + " lumen left_lung_meridian " + leftQi + " 0.01"));
                     next(Stage.WARNING);
                 }
@@ -229,7 +231,7 @@ final class OpeningEffectsJourney {
                     capture(client, "opening-07-interrupted.png");
                 }
                 if (ticks >= 55 && work == null) {
-                    query(client, player -> command(player, "meridian opening complete " + player.getEntityName() + " right_lung_meridian"));
+                    query(client, player -> command(player, "meridian opening complete " + player.getScoreboardName() + " right_lung_meridian"));
                     next(Stage.DEBUG);
                 }
             }
@@ -255,11 +257,11 @@ final class OpeningEffectsJourney {
                 if (ticks == 5) {
                     capture(client, "opening-09-reduced-motion.png");
                     EffectSettings.toggleMotion();
-                    Files.writeString(client.runDirectory.toPath().resolve("opening-effects-ok.txt"),
+                    Files.writeString(client.gameDirectory.toPath().resolve("opening-effects-ok.txt"),
                             "正常15秒开脉；站姿/检视/打坐；自然完成；阈值预警；暂停回退；OP完成；减少动态。\n");
                     System.out.println("OPENING_EFFECTS_JOURNEY_OK normal/opened/warning/paused/debug/three-views");
                     next(Stage.DONE);
-                    client.scheduleStop();
+                    client.stop();
                 }
             }
             default -> { /* 生命周期阶段无需操作。 */ }
@@ -311,17 +313,17 @@ final class OpeningEffectsJourney {
         }
     }
 
-    private void query(MinecraftClient client, Consumer<ServerPlayerEntity> action) {
+    private void query(Minecraft client, Consumer<ServerPlayer> action) {
         // 查询与命令串行放入真正服务器线程，未完成时不发出第二笔操作。
         require(work == null, "服务端验收操作重叠");
-        UUID id = client.player.getUuid();
-        var server = client.getServer();
+        UUID id = client.player.getUUID();
+        var server = client.getSingleplayerServer();
         work = CompletableFuture.supplyAsync(() -> {
-            ServerPlayerEntity player = server.getPlayerManager().getPlayer(id);
+            ServerPlayer player = server.getPlayerList().getPlayer(id);
             action.accept(player);
             try {
                 var request = HealthHostRequest.newBuilder().setProtocolVersion(1).setRequestId(UUID.randomUUID().toString())
-                        .setSubjectId(player.getUuidAsString()).setInspect(true).build();
+                        .setSubjectId(player.getStringUUID()).setInspect(true).build();
                 var response = HealthHostResponse.parseFrom(new HumanHealthHost().exchange(request.toByteArray()));
                 require(response.hasBody(), "正式身体宿主拒绝查询");
                 return response.getBody();
@@ -331,9 +333,9 @@ final class OpeningEffectsJourney {
         }, server);
     }
 
-    private static void command(ServerPlayerEntity player, String command) {
+    private static void command(ServerPlayer player, String command) {
         // 和玩家管理员使用同一命令树，不直接改身体或开脉状态。
-        int result = player.getServer().getCommandManager().executeWithPrefix(player.getCommandSource().withLevel(4), command);
+        int result = player.getServer().getCommands().performPrefixedCommand(player.createCommandSourceStack().withPermission(4), command);
         require(result == 1, "命令失败：" + command);
     }
 
@@ -344,20 +346,20 @@ final class OpeningEffectsJourney {
         System.out.println("OPENING_EFFECTS_STAGE " + stage);
     }
 
-    private static void capture(MinecraftClient client, String name) {
+    private static void capture(Minecraft client, String name) {
         // 保存真正GPU帧缓冲，截图不会替代权威结果断言。
-        ScreenshotRecorder.saveScreenshot(client.runDirectory, name, client.getFramebuffer(), ignored -> {});
+        Screenshot.grab(client.gameDirectory, name, client.getMainRenderTarget(), ignored -> {});
     }
 
-    private int redPixels(MinecraftClient client) {
+    private int redPixels(Minecraft client) {
         // 排除窗口文字和底部控制条，只在实际3D画布里验证退光已经被GPU绘制。
         var canvas = module.meridianPanel().canvas();
-        double scale = client.getWindow().getScaleFactor();
+        double scale = client.getWindow().getGuiScale();
         int count = 0;
-        try (var image = ScreenshotRecorder.takeScreenshot(client.getFramebuffer())) {
+        try (var image = Screenshot.takeScreenshot(client.getMainRenderTarget())) {
             for (int y = (int) ((canvas.y() + 12) * scale); y < (canvas.y() + canvas.height() - 110) * scale; y++) {
                 for (int x = (int) ((canvas.x() + 12) * scale); x < (canvas.x() + canvas.width() - 12) * scale; x++) {
-                    int color = image.getColor(x, y);
+                    int color = image.getPixelRGBA(x, y);
                     int red = color & 255;
                     int green = color >> 8 & 255;
                     int blue = color >> 16 & 255;

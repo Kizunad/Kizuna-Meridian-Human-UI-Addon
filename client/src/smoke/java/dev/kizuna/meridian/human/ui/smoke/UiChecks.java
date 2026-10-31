@@ -1,14 +1,14 @@
 package dev.kizuna.meridian.human.ui.smoke;
 
+import com.mojang.blaze3d.platform.NativeImage;
 import dev.kizuna.meridian.ui.client.BodyCanvas;
 import dev.kizuna.meridian.ui.client.BodyUiModule;
 import io.wispforest.owo.ui.core.Component;
-import net.minecraft.client.MinecraftClient;
-import net.minecraft.client.texture.NativeImage;
-import net.minecraft.client.util.ScreenshotRecorder;
 import java.util.ArrayList;
 import java.util.Comparator;
 import java.util.List;
+import net.minecraft.client.Minecraft;
+import net.minecraft.client.Screenshot;
 
 /** 整合服 smoke 共用的界面断言；全部基于挂载后的真实组件边界、帧缓冲和 Screen 输入链。 */
 final class UiChecks {
@@ -33,15 +33,15 @@ final class UiChecks {
         }
     }
 
-    static void click(MinecraftClient client, Component component, int button) {
+    static void click(Minecraft client, Component component, int button) {
         // 点击控件中心并经过真实 Screen 按下与释放，保护遮挡和命中问题。
         double x = component.x() + component.width() / 2.0;
         double y = component.y() + component.height() / 2.0;
-        client.currentScreen.mouseClicked(x, y, button);
-        client.currentScreen.mouseReleased(x, y, button);
+        client.screen.mouseClicked(x, y, button);
+        client.screen.mouseReleased(x, y, button);
     }
 
-    static void clickBody(MinecraftClient client, BodyUiModule module, String targetId) {
+    static void clickBody(Minecraft client, BodyUiModule module, String targetId) {
         // 从画布中心向外寻找目标的可见面，再经真实 Screen 链点击，确认选择事件接线。
         BodyCanvas canvas = module.panel().canvas();
         List<int[]> probes = new ArrayList<>();
@@ -59,26 +59,26 @@ final class UiChecks {
             if (hit == null || !hit.getTargetId().equals(targetId)) {
                 continue;
             }
-            client.currentScreen.mouseClicked(canvas.x() + point[0], canvas.y() + point[1], 0);
-            client.currentScreen.mouseReleased(canvas.x() + point[0], canvas.y() + point[1], 0);
+            client.screen.mouseClicked(canvas.x() + point[0], canvas.y() + point[1], 0);
+            client.screen.mouseReleased(canvas.x() + point[0], canvas.y() + point[1], 0);
             require(module.panel().selectedId().equals(targetId), "点击没有选择相应身体对象：" + targetId);
             return;
         }
         throw new IllegalStateException("当前层中没有可点击的对象：" + targetId);
     }
 
-    static void requireModelPixels(MinecraftClient client, Component canvas, int background) {
+    static void requireModelPixels(Minecraft client, Component canvas, int background) {
         // CPU 命中测试发现不了 GPU 矩阵裁剪错误，需确认画布里确实画出了与底色不同的模型像素。
-        double scale = client.getWindow().getScaleFactor();
+        double scale = client.getWindow().getGuiScale();
         int left = (int) ((canvas.x() + 8) * scale);
         int top = (int) ((canvas.y() + 8) * scale);
         int right = (int) ((canvas.x() + canvas.width() - 8) * scale);
         int bottom = (int) ((canvas.y() + canvas.height() - 8) * scale);
         int modelPixels = 0;
-        try (NativeImage image = ScreenshotRecorder.takeScreenshot(client.getFramebuffer())) {
+        try (NativeImage image = Screenshot.takeScreenshot(client.getMainRenderTarget())) {
             for (int y = top; y < Math.min(bottom, image.getHeight()); y += 2) {
                 for (int x = left; x < Math.min(right, image.getWidth()); x += 2) {
-                    int color = image.getColor(x, y);
+                    int color = image.getPixelRGBA(x, y);
                     int difference = Math.abs((color & 255) - (background >> 16 & 255))
                             + Math.abs((color >> 8 & 255) - (background >> 8 & 255))
                             + Math.abs((color >> 16 & 255) - (background & 255));
@@ -91,9 +91,9 @@ final class UiChecks {
         require(modelPixels >= (right - left) * (bottom - top) / 4000, "模型可以被选中但没有绘制到画布");
     }
 
-    static void capture(MinecraftClient client, String name) {
+    static void capture(Minecraft client, String name) {
         // 截图保存在运行目录，供复核真实画面。
-        ScreenshotRecorder.saveScreenshot(client.runDirectory, name, client.getFramebuffer(), ignored -> {});
+        Screenshot.grab(client.gameDirectory, name, client.getMainRenderTarget(), ignored -> {});
     }
 
     static void require(boolean condition, String message) {

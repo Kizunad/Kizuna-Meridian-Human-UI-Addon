@@ -1,5 +1,6 @@
 package dev.kizuna.meridian.human.ui.smoke;
 
+import com.mojang.blaze3d.platform.NativeImage;
 import dev.kizuna.inventoryui.client.ClientModule;
 import dev.kizuna.inventoryui.client.InventoryUiClient;
 import dev.kizuna.meridian.human.server.HumanBirth;
@@ -12,12 +13,11 @@ import dev.kizuna.meridian.ui.client.BodyUiModule;
 import net.fabricmc.api.ClientModInitializer;
 import net.fabricmc.fabric.api.client.event.lifecycle.v1.ClientTickEvents;
 import net.fabricmc.loader.api.FabricLoader;
-import net.minecraft.client.MinecraftClient;
-import net.minecraft.client.gui.screen.AccessibilityOnboardingScreen;
-import net.minecraft.client.gui.screen.TitleScreen;
-import net.minecraft.client.texture.NativeImage;
-import net.minecraft.client.util.ScreenshotRecorder;
-import net.minecraft.util.Identifier;
+import net.minecraft.client.Minecraft;
+import net.minecraft.client.Screenshot;
+import net.minecraft.client.gui.screens.AccessibilityOnboardingScreen;
+import net.minecraft.client.gui.screens.TitleScreen;
+import net.minecraft.resources.ResourceLocation;
 import java.nio.file.Files;
 import java.util.List;
 
@@ -59,12 +59,12 @@ public final class HumanOpeningSmoke implements ClientModInitializer {
         });
     }
 
-    private void tick(MinecraftClient client) throws Exception {
+    private void tick(Minecraft client) throws Exception {
         // 等资源和工作台注册完成后装配只读样例，不依赖外部服务器或玩家存档。
         if (++age > 48_000) {
             throw new IllegalStateException("人体内观 smoke 超时");
         }
-        if (client.currentScreen instanceof AccessibilityOnboardingScreen) {
+        if (client.screen instanceof AccessibilityOnboardingScreen) {
             client.setScreen(new TitleScreen());
         }
         if (module == null && client.getOverlay() == null) {
@@ -87,9 +87,9 @@ public final class HumanOpeningSmoke implements ClientModInitializer {
             var time = TimeCursor.newBuilder().setDomain("smoke:human_ui").setEpoch("preview")
                     .setElapsedMillis(0).build();
             initial = BodySnapshot.parseFrom(HumanBirth.candidate(HumanContent.bundle().getTemplates(0), "preview", time));
-            client.options.getGuiScale().setValue(2);
-            client.onResolutionChanged();
-            module.present(initial, new Identifier("meridian_human", "meridian/adult.pb"));
+            client.options.guiScale().set(2);
+            client.resizeDisplay();
+            module.present(initial, new ResourceLocation("meridian_human", "meridian/adult.pb"));
             InventoryUiClient.runtime().openWorkspace();
             InventoryUiClient.runtime().open("meridian_ui:meridians", null);
         }
@@ -125,7 +125,7 @@ public final class HumanOpeningSmoke implements ClientModInitializer {
         }
         if (ticks == 180) {
             // 交汇必须明显高于肩部经脉，截图保留最接近人中的一帧，而非刚离开原网格的瞬间。
-            double minimumRise = module.meridianPanel().canvas().height() * client.getWindow().getScaleFactor() * .06;
+            double minimumRise = module.meridianPanel().canvas().height() * client.getWindow().getGuiScale() * .06;
             if (upperTrailPixel >= upperMeridianPixel - minimumRise || brightestFrame < 4) {
                 throw new IllegalStateException("GPU 未显示人中交叉光迹：" + upperMeridianPixel + "/" + upperTrailPixel);
             }
@@ -137,23 +137,23 @@ public final class HumanOpeningSmoke implements ClientModInitializer {
                 throw new IllegalStateException("在途移除后残留光迹");
             }
             capture(client, "middle-jiao-stopped.png");
-            Files.writeString(client.runDirectory.toPath().resolve("human-ui-smoke-ok.txt"),
+            Files.writeString(client.gameDirectory.toPath().resolve("human-ui-smoke-ok.txt"),
                     "Human-UI entrypoint; Human model; opening canvas; moving philtrum light; transit removal");
             System.out.println("HUMAN_UI_SMOKE_OK");
-            client.scheduleStop();
+            client.stop();
         }
     }
 
-    private int[] pixels(MinecraftClient client, boolean brightOnly) {
+    private int[] pixels(Minecraft client, boolean brightOnly) {
         // 只检查三维画布内部，排除顶栏文字；低亮度模型和亮光尾使用不同阈值。
         BodyCanvas canvas = module.meridianPanel().canvas();
-        double scale = client.getWindow().getScaleFactor();
+        double scale = client.getWindow().getGuiScale();
         int upper = Integer.MAX_VALUE;
         int count = 0;
-        try (NativeImage image = ScreenshotRecorder.takeScreenshot(client.getFramebuffer())) {
+        try (NativeImage image = Screenshot.takeScreenshot(client.getMainRenderTarget())) {
             for (int y = (int) (canvas.y() * scale) + 4; y < (canvas.y() + canvas.height() - 110) * scale - 4; y++) {
                 for (int x = (int) (canvas.x() * scale) + 4; x < (canvas.x() + canvas.width()) * scale - 4; x++) {
-                    int color = image.getColor(x, y);
+                    int color = image.getPixelRGBA(x, y);
                     int red = color & 255;
                     int green = color >> 8 & 255;
                     int blue = color >> 16 & 255;
@@ -171,8 +171,8 @@ public final class HumanOpeningSmoke implements ClientModInitializer {
         return new int[]{upper, count};
     }
 
-    private void capture(MinecraftClient client, String name) {
+    private void capture(Minecraft client, String name) {
         // 截图保存在忽略的独立运行目录，供复核实际画面。
-        ScreenshotRecorder.saveScreenshot(client.runDirectory, name, client.getFramebuffer(), message -> {});
+        Screenshot.grab(client.gameDirectory, name, client.getMainRenderTarget(), message -> {});
     }
 }

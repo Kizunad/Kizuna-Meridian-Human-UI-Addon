@@ -3,8 +3,8 @@ package dev.kizuna.meridian.human.ui.smoke;
 import dev.kizuna.inventoryui.client.InventoryUiClient;
 import dev.kizuna.meridian.ui.client.BodyUiModule;
 import io.wispforest.owo.ui.core.Component;
-import net.minecraft.client.MinecraftClient;
-import net.minecraft.client.util.ScreenshotRecorder;
+import net.minecraft.client.Minecraft;
+import net.minecraft.client.Screenshot;
 
 /** 通过正式窗口复选框与按钮验证自动吐纳，不直接调用服务端活动接口。 */
 final class AutomaticBreathingJourney {
@@ -14,17 +14,17 @@ final class AutomaticBreathingJourney {
     private boolean done;
     private double attention;
 
-    boolean tick(MinecraftClient client, BodyUiModule module) {
+    boolean tick(Minecraft client, BodyUiModule module) {
         // 等待权威视图后点击真实组件，窗口开关不改写身体耐力。
         if (done) {
             return true;
         }
         if (++ticks == 1) {
-            client.options.getGuiScale().setValue(2);
-            client.onResolutionChanged();
+            client.options.guiScale().set(2);
+            client.resizeDisplay();
             InventoryUiClient.runtime().openWorkspace();
             InventoryUiClient.runtime().open("meridian_ui:cultivation", null);
-            org.lwjgl.glfw.GLFW.glfwFocusWindow(client.getWindow().getHandle());
+            org.lwjgl.glfw.GLFW.glfwFocusWindow(client.getWindow().getWindow());
         }
         var panel = module.cultivationPanel();
         if (panel == null || ticks < 20) {
@@ -44,7 +44,7 @@ final class AutomaticBreathingJourney {
             begun = true;
             require(breath.getAttentionRatio() >= attention - 1e-9, "自动吐纳消耗了精力");
             if (!captured && breath.getStaminaRatio() < .99) {
-                ScreenshotRecorder.saveScreenshot(client.runDirectory, "automatic-breathing.png", client.getFramebuffer(), ignored -> {});
+                Screenshot.grab(client.gameDirectory, "automatic-breathing.png", client.getMainRenderTarget(), ignored -> {});
                 captured = true;
             }
         } else if (begun) {
@@ -58,12 +58,12 @@ final class AutomaticBreathingJourney {
         return done;
     }
 
-    private static void click(MinecraftClient client, Component component) {
+    private static void click(Minecraft client, Component component) {
         // 屏幕命中链保护复选框和按钮没有被三维画布遮挡。
         double x = component.x() + component.width() / 2.0;
         double y = component.y() + component.height() / 2.0;
-        client.currentScreen.mouseClicked(x, y, 0);
-        client.currentScreen.mouseReleased(x, y, 0);
+        client.screen.mouseClicked(x, y, 0);
+        client.screen.mouseReleased(x, y, 0);
     }
 
     private static void require(boolean condition, String message) {

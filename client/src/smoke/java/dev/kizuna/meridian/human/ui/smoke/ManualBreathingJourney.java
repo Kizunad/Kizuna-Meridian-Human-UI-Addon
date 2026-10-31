@@ -6,14 +6,15 @@ import dev.kizuna.meridian.protocol.pb.BreathingMessages.BreathParticle;
 import dev.kizuna.meridian.protocol.pb.BreathingMessages.BreathingView;
 import dev.kizuna.meridian.ui.client.BodyUiModule;
 import io.wispforest.owo.ui.core.Component;
-import net.minecraft.client.MinecraftClient;
-import net.minecraft.client.sound.SoundInstance;
-import net.minecraft.client.sound.SoundInstanceListener;
 import org.lwjgl.glfw.GLFW;
 import java.util.Comparator;
 import java.util.HashSet;
 import java.util.List;
 import java.util.Set;
+import net.minecraft.client.Minecraft;
+import net.minecraft.client.resources.sounds.SoundInstance;
+import net.minecraft.client.sounds.SoundEventListener;
+
 import static dev.kizuna.meridian.human.ui.smoke.UiChecks.*;
 
 /** 整合服内的手动吐纳回归：真实鼠标对准服务端粒子吸呼，验证布局、旋转、空气上下限、音效、消耗、关窗停止和独立重开。 */
@@ -24,17 +25,17 @@ final class ManualBreathingJourney {
     private WindowKey breathing;
     private SoundInstance lastSound;
     private final Set<String> heardSounds = new HashSet<>();
-    private final SoundInstanceListener listener = (sound, sounds) -> {
+    private final SoundEventListener listener = (sound, sounds) -> {
         // 只记录本 UI 的吸呼声，确认真实声音管理器的播放与停止。
-        if (sound.getId().getNamespace().equals("meridian_ui")) {
+        if (sound.getLocation().getNamespace().equals("meridian_ui")) {
             lastSound = sound;
-            heardSounds.add(sound.getId().getPath());
+            heardSounds.add(sound.getLocation().getPath());
         }
     };
     private double attentionBefore;
     private double absorbedBefore;
 
-    boolean tick(MinecraftClient client, BodyUiModule module) {
+    boolean tick(Minecraft client, BodyUiModule module) {
         // 时间轴按 tick 推进；所有资源结果读取服务端返回的吐纳视图。
         if (done) {
             return true;
@@ -42,17 +43,17 @@ final class ManualBreathingJourney {
         ticks++;
         require(ticks < 2400, "手动吐纳回归超时");
         if (ticks == 1) {
-            client.options.getGuiScale().setValue(2);
-            client.onResolutionChanged();
-            client.getSoundManager().registerListener(listener);
+            client.options.guiScale().set(2);
+            client.resizeDisplay();
+            client.getSoundManager().addListener(listener);
             InventoryUiClient.runtime().openWorkspace();
             body = InventoryUiClient.runtime().open("meridian_ui:body", null).key();
             breathing = InventoryUiClient.runtime().open("meridian_ui:cultivation", null).key();
-            GLFW.glfwFocusWindow(client.getWindow().getHandle());
+            GLFW.glfwFocusWindow(client.getWindow().getWindow());
         }
         if (ticks == 330) {
             // 吐纳窗口已在 315 tick 关闭：确认音效完整播放后关掉身体窗口，再单独重开吐纳窗口。
-            require(!client.getSoundManager().isPlaying(lastSound)
+            require(!client.getSoundManager().isActive(lastSound)
                     && heardSounds.containsAll(Set.of("breathing.inhale", "breathing.exhale")), "吸呼音效未完整播放或关窗后仍在播放");
             InventoryUiClient.runtime().workspace().windows().close(body);
             breathing = InventoryUiClient.runtime().open("meridian_ui:cultivation", null).key();
@@ -81,9 +82,9 @@ final class ManualBreathingJourney {
             var before = canvas.projectParticle(particle);
             double x = canvas.x() + canvas.width() * .5;
             double y = canvas.y() + canvas.height() * .5;
-            client.currentScreen.mouseClicked(x, y, 2);
-            client.currentScreen.mouseDragged(x + 85, y + 18, 2, 85, 18);
-            client.currentScreen.mouseReleased(x + 85, y + 18, 2);
+            client.screen.mouseClicked(x, y, 2);
+            client.screen.mouseDragged(x + 85, y + 18, 2, 85, 18);
+            client.screen.mouseReleased(x + 85, y + 18, 2);
             require(before.distance(canvas.projectParticle(particle)) >= .01, "中键拖动没有改变三维粒子投影");
         }
         if (ticks == 35) {
@@ -93,13 +94,13 @@ final class ManualBreathingJourney {
             steer(client, module, 0);
         }
         if (ticks == 85) {
-            require(lastSound != null && client.getSoundManager().isPlaying(lastSound), "有效吸气没有播放呼吸音效");
+            require(lastSound != null && client.getSoundManager().isActive(lastSound), "有效吸气没有播放呼吸音效");
             capture(client, "breathing-inhale.png");
         }
         if (ticks == 140) {
             require(Math.abs(breath.getAirLiters() - breath.getCapacityLiters()) <= .01, "持续吸气未被肺容量边界截断：" + breath.getAirLiters());
             capture(client, "breathing-full.png");
-            client.currentScreen.mouseReleased(0, 0, 0);
+            client.screen.mouseReleased(0, 0, 0);
         }
         if (ticks >= 150 && ticks <= 245 && ticks % 5 == 0) {
             steer(client, module, 1);
@@ -109,10 +110,10 @@ final class ManualBreathingJourney {
         }
         if (ticks == 250) {
             require(breath.getAirLiters() <= .01, "持续呼气没有排空并停止：" + breath.getAirLiters());
-            client.currentScreen.mouseReleased(0, 0, 1);
+            client.screen.mouseReleased(0, 0, 1);
         }
         if (ticks == 256) {
-            require(lastSound == null || !client.getSoundManager().isPlaying(lastSound), "排空或松键后呼吸音效没有停止");
+            require(lastSound == null || !client.getSoundManager().isActive(lastSound), "排空或松键后呼吸音效没有停止");
         }
         if (ticks >= 260 && ticks <= 310 && ticks % 5 == 0) {
             steer(client, module, 0);
@@ -121,7 +122,7 @@ final class ManualBreathingJourney {
             // 结束前读取服务端视图：手动吸呼确实消耗了精力，并且本连接有真实摄入。
             require(breath.getAttentionRatio() < attentionBefore && breath.getAbsorbedQi() > absorbedBefore,
                     "手动吐纳没有消耗精力或没有真实摄入：" + breath);
-            client.currentScreen.mouseReleased(0, 0, 0);
+            client.screen.mouseReleased(0, 0, 0);
             InventoryUiClient.runtime().workspace().windows().close(breathing);
         }
         if (ticks == 350) {
@@ -140,15 +141,15 @@ final class ManualBreathingJourney {
         if (ticks == 425) {
             // 经脉已被前序夹具填满时服务端可提示配送暂时受阻，这不代表吐纳停止，只要求会话仍在进行。
             require(breath.getActive(), "重开窗口后无法再次吐纳：" + breath);
-            client.currentScreen.mouseReleased(0, 0, 0);
-            client.currentScreen.mouseReleased(0, 0, 1);
+            client.screen.mouseReleased(0, 0, 0);
+            client.screen.mouseReleased(0, 0, 1);
             click(client, module.cultivationPanel().root().childById(Component.class, "breathing-start"), 0);
         }
         if (ticks == 440) {
             require(!breath.getActive(), "结束按钮没有停止吐纳");
             capture(client, "breathing-renewed.png");
             InventoryUiClient.runtime().workspace().windows().close(breathing);
-            client.getSoundManager().unregisterListener(listener);
+            client.getSoundManager().removeListener(listener);
             client.setScreen(null);
             System.out.println("MANUAL_BREATHING_JOURNEY_OK layout/orbit/inhale/full/exhale/empty/sound/cost/close/independent/restart");
             done = true;
@@ -182,12 +183,12 @@ final class ManualBreathingJourney {
                 "场景旋转或按钮输入被叠加控件遮挡");
     }
 
-    private static void clickStart(MinecraftClient client, BodyUiModule module) {
+    private static void clickStart(Minecraft client, BodyUiModule module) {
         // 经真实按钮链路开始或确认指引，不直接调用面板方法。
         click(client, module.cultivationPanel().root().childById(Component.class, "breathing-start"), 0);
     }
 
-    private void steer(MinecraftClient client, BodyUiModule module, int button) {
+    private void steer(Minecraft client, BodyUiModule module, int button) {
         // 鼠标对准相机中真实的服务端粒子并避开叠加控件；吸气选近处，呼气选远处。
         var panel = module.cultivationPanel();
         var canvas = panel.canvas();
@@ -216,10 +217,10 @@ final class ManualBreathingJourney {
             y = canvas.y() + point.y * canvas.height();
         }
         if (button == 1) {
-            client.currentScreen.mouseReleased(0, 0, 0);
+            client.screen.mouseReleased(0, 0, 0);
         } else {
-            client.currentScreen.mouseReleased(0, 0, 1);
+            client.screen.mouseReleased(0, 0, 1);
         }
-        client.currentScreen.mouseClicked(x, y, button);
+        client.screen.mouseClicked(x, y, button);
     }
 }

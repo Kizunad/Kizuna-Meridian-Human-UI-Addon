@@ -5,10 +5,11 @@ import dev.kizuna.inventoryui.window.UiWindowManager.WindowKey;
 import dev.kizuna.meridian.ui.client.BodyUiModule;
 import io.wispforest.owo.ui.container.ScrollContainer;
 import io.wispforest.owo.ui.core.Component;
-import net.minecraft.client.MinecraftClient;
 import org.lwjgl.glfw.GLFW;
 import java.util.List;
 import java.util.Set;
+import net.minecraft.client.Minecraft;
+
 import static dev.kizuna.meridian.human.ui.smoke.UiChecks.*;
 
 /** 整合服内的响应式回归：同一组“检视”“吐纳”窗口经历多组真实分辨率与 GUI 缩放，布局、选择、输入和权威吐纳状态都要保留。 */
@@ -27,7 +28,7 @@ final class ResponsiveJourney {
     private Component breathingRoot;
     private int informationTop;
 
-    boolean tick(MinecraftClient client, BodyUiModule module) throws Exception {
+    boolean tick(Minecraft client, BodyUiModule module) throws Exception {
         // 每组先调整真实窗口，再检查身体窗口和吐纳窗口；吐纳从第一组开始保持服务端活动。
         if (done) {
             return true;
@@ -43,13 +44,13 @@ final class ResponsiveJourney {
             InventoryUiClient.runtime().workspace().windows().reset();
             InventoryUiClient.runtime().openWorkspace();
             body = InventoryUiClient.runtime().open("meridian_ui:body", null).key();
-            GLFW.glfwFocusWindow(client.getWindow().getHandle());
+            GLFW.glfwFocusWindow(client.getWindow().getWindow());
         }
         if (step == 2) {
             int[] size = SIZES[scenario];
-            GLFW.glfwSetWindowSize(client.getWindow().getHandle(), size[0], size[1]);
-            client.options.getGuiScale().setValue(size[2]);
-            client.onResolutionChanged();
+            GLFW.glfwSetWindowSize(client.getWindow().getWindow(), size[0], size[1]);
+            client.options.guiScale().set(size[2]);
+            client.resizeDisplay();
         }
         if (step == 15) {
             checkBody(client, module, scenario);
@@ -59,7 +60,7 @@ final class ResponsiveJourney {
             var root = module.panel().root();
             Component details = root.childById(Component.class, "information-scroll");
             informationTop = root.childById(Component.class, "information").y();
-            client.currentScreen.mouseScrolled(details.x() + details.width() / 2.0, details.y() + details.height() / 2.0, -30);
+            client.screen.mouseScrolled(details.x() + details.width() / 2.0, details.y() + details.height() / 2.0, -30);
         }
         if (step == 27) {
             var root = module.panel().root();
@@ -88,7 +89,7 @@ final class ResponsiveJourney {
         return false;
     }
 
-    private void checkBody(MinecraftClient client, BodyUiModule module, int scenario) {
+    private void checkBody(Minecraft client, BodyUiModule module, int scenario) {
         // 身体组件、选择与图层跨尺寸保留；各区域都在内容区内且互不覆盖。
         var panel = module.panel();
         if (scenario == 0) {
@@ -112,11 +113,11 @@ final class ResponsiveJourney {
         panel.canvas().camera().settle();
         clickBody(client, module, "heart");
         root.childById(ScrollContainer.class, "information-scroll").scrollTo(0);
-        System.out.println("RESPONSIVE_BODY " + scenario + " " + client.getWindow().getScaledWidth() + "x"
-                + client.getWindow().getScaledHeight() + " content=" + root.width() + "x" + root.height());
+        System.out.println("RESPONSIVE_BODY " + scenario + " " + client.getWindow().getGuiScaledWidth() + "x"
+                + client.getWindow().getGuiScaledHeight() + " content=" + root.width() + "x" + root.height());
     }
 
-    private void checkBreathing(MinecraftClient client, BodyUiModule module, int scenario) {
+    private void checkBreathing(Minecraft client, BodyUiModule module, int scenario) {
         // 吐纳控件都叠在三维画布内、互不覆盖且命中与绘制一致；尺寸变化不重建组件也不中断权威会话。
         var panel = module.cultivationPanel();
         var root = panel.root();
@@ -146,15 +147,15 @@ final class ResponsiveJourney {
         }
     }
 
-    private void finish(MinecraftClient client, BodyUiModule module) {
+    private void finish(Minecraft client, BodyUiModule module) {
         // 结束吐纳并关闭两个窗口，恢复默认窗口尺寸，后续旅程从同一基准开始。
         require(tutorialSeen, "首次开始吐纳没有先显示操作指引");
         InventoryUiClient.runtime().workspace().windows().close(breathing);
         InventoryUiClient.runtime().workspace().windows().close(body);
         require(module.panel() == null && module.cultivationPanel() == null, "关闭后窗口组件未清理");
-        GLFW.glfwSetWindowSize(client.getWindow().getHandle(), 1440, 1000);
-        client.options.getGuiScale().setValue(2);
-        client.onResolutionChanged();
+        GLFW.glfwSetWindowSize(client.getWindow().getWindow(), 1440, 1000);
+        client.options.guiScale().set(2);
+        client.resizeDisplay();
         client.setScreen(null);
         System.out.println("RESPONSIVE_JOURNEY_OK five sizes; body layout/selection/scroll/click; breathing layout/hit/active session; tutorial");
         done = true;
