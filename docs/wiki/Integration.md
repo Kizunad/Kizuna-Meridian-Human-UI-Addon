@@ -2,7 +2,7 @@
 
 检视窗口的信息区首行显示「年龄 / 寿元：18.0 年 / 62.0 年」等只读数据，未选中或已选中对象时都保留。年龄来自权威 `vitality.age_seconds`，剩余寿元为上限减年龄和额外支出，最低为零；按一年 365.25 天换算并保留一位小数，不在客户端累计时间。玩家死亡重生后收到同一身体的新版本，初值一年费用会使 62.0 年变为 61.0 年。
 
-`xvfb-run -a ./gradlew :client:runSmoke -PrevivalSmoke=true` 在真实整合服执行死亡、客户端重生与检视刷新，检查实际组件文字和 GUI 缩放 2、3，并输出 `REVIVAL_UI_OK` 与 `revival-*.png`。验收代码只在 smoke 源集中运行。
+`env -u DISPLAY -u WAYLAND_DISPLAY LIBGL_ALWAYS_SOFTWARE=1 xvfb-run -a -s "-screen 0 1920x1100x24" ./gradlew :client:runSmoke -PrevivalSmoke=true` 在真实整合服执行死亡、客户端重生与检视刷新，检查实际组件文字和 GUI 缩放 2、3，并输出 `REVIVAL_UI_OK` 与 `revival-*.png`。验收代码只在 smoke 源集中运行。
 
 Players-Animation 的必装 JAR 提供双体型骨架与打坐资源，验收装配不启用外置动画资源补丁。吐纳预览按当前玩家体型采样骨矩阵，本包开脉光迹继续通过同一挂点附着；外世界动画由 Human 的统一调度点选择。实际位移先正式结束权威吐纳，再切换走路或疾跑，客户端光迹不参与这一判定。
 
@@ -38,10 +38,10 @@ smoke 启动时删除运行目录中的吐纳指引已读偏好，按新玩家�
 ```bash
 ./gradlew build --offline --console=plain --no-watch-fs
 python3 "scripts/check_docs.py"
-xvfb-run -a ./gradlew :client:runSmoke --offline --console=plain --no-watch-fs
+env -u DISPLAY -u WAYLAND_DISPLAY LIBGL_ALWAYS_SOFTWARE=1 xvfb-run -a -s "-screen 0 1920x1100x24" ./gradlew :client:runSmoke --offline --console=plain --no-watch-fs
 ```
 
-离线命令要求依赖已缓存，首次构建可去掉 `--offline`。Windows 使用 `gradlew.bat`，图形桌面直接执行 `:client:runSmoke`，无需 Xvfb。开发运行统一应用 Framework 的 `scripts/full-assembly.gradle`，固定装配 Meridian 九仓（含 Progression 和 Players-Animation）及 Inventory UI、BS3D 的 client/common 安装产物，不提供安装开关。源码依赖位置与必装关系是不同概念。
+Linux 无显示环境统一清掉 `DISPLAY`、`WAYLAND_DISPLAY` 并用 Xvfb 加 Mesa 软件渲染（`LIBGL_ALWAYS_SOFTWARE=1`，llvmpipe）：26.2 客户端在 WSLg 有显示时会卡在 `glfwShowWindow`，Xvfb 下默认的 Mesa d3d12 驱动在退出时让 JVM 崩溃，Gradle 判为失败。屏幕取 1920x1100，与自适应检查最大的 1920×1080 窗口相符。离线命令要求依赖已缓存，首次构建可去掉 `--offline`。Windows 使用 `gradlew.bat`，图形桌面直接执行 `:client:runSmoke`，无需 Xvfb。开发运行统一应用 Framework 的 `scripts/full-assembly.gradle`，固定装配 Meridian 九仓（含 Progression 和 Players-Animation）及 Inventory UI、BS3D 的 client/common 安装产物，不提供安装开关。源码依赖位置与必装关系是不同概念。
 
 本轮要求 UI checkout 已提供 `dev.kizuna.meridian.ui.api.MeridianRouteProvider`；组合构建直接编译 UI 当前源码。`local.meridian:*` 是 Framework 的本地替换键；Progression、Human、UI 与 Inventory UI 的替换键用各自工程的 group 与工程名，同样不是已发布的 Maven 坐标。
 
