@@ -14,18 +14,16 @@ dependencies {
     // 开发运行由完整装配按替换坐标装入，这里不再声明第二份。
     compileOnly('dev.kizuna.meridian.ui:client') { targetConfiguration = 'namedElements' }
     compileOnly('dev.kizuna.inventoryui:kizuna-inventory-ui-framework') { targetConfiguration = 'namedElements' }
-    compileOnly('local.progression:client') { targetConfiguration = 'namedElements' }
+    compileOnly('dev.kizuna.meridian.progression:client') { targetConfiguration = 'namedElements' }
     // 人体展示包是普通 Java 库，不在完整装配清单的运行模块里，由本仓直接装入。
     implementation('dev.kizuna.meridian.human:client') { transitive = false }
     implementation 'local.meridian:client'
     implementation 'dev.kizuna.meridian.human:shared'
-    implementation 'local.progression:shared'
-    // 完整装配按坐标重映射 Human、Progression 等模组时，Loom 以真实坐标重新加入 Framework server 与 Progression server；
-    // 运行与测试类路径直接声明组合工程，冲突时才会解析到同一组合工程，而不是去外部仓库找不存在的发布坐标。
-    // Progression server 已由完整装配按替换坐标装入运行类路径，只需补测试类路径。
+    implementation 'dev.kizuna.meridian.progression:shared'
+    // 完整装配按坐标重映射 Human、Progression 等模组时，Loom 以真实坐标重新加入 Framework server；Framework 的替换键仍是
+    // local.meridian，运行与测试类路径直接声明组合工程，冲突时才会解析到同一组合工程，而不是去外部仓库找不存在的发布坐标。
     localRuntime 'local.meridian:server'
     testRuntimeOnly 'local.meridian:server'
-    testRuntimeOnly 'local.progression:server'
     testImplementation libs.junit4
     testImplementation 'dev.kizuna.meridian.human:server'
     // 单元测试直接使用 UI 的路线类型，测试类路径单独补上同一份 named JAR。
@@ -52,7 +50,7 @@ dependencies {
     smokeImplementation 'local.meridian:server'
     // 验收代码用组合工程的 named 开发 JAR 编译；运行依赖仍只由 full-assembly 重映射并装入一次。
     smokeCompileOnly('dev.kizuna.meridian.human:fabric') { targetConfiguration = 'namedElements' }
-    smokeCompileOnly('local.progression:fabric') { targetConfiguration = 'namedElements' }
+    smokeCompileOnly('dev.kizuna.meridian.progression:fabric') { targetConfiguration = 'namedElements' }
     smokeCompileOnly('dev.kizuna.inventoryui:server') { targetConfiguration = 'namedElements' }
 }
 loom {

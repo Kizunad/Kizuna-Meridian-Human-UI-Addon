@@ -17,14 +17,14 @@ include 'client'
 // UI 只登记 Progression client/shared，所以 Framework、Inventory UI、Progression 依次排在它们之前。
 kizunaWorkspace.includeSource('framework', [client: 'local.meridian:client', server: 'local.meridian:server'])
 kizunaWorkspace.includeSource('inventory-ui', ['': 'dev.kizuna.inventoryui:kizuna-inventory-ui-framework', server: 'dev.kizuna.inventoryui:server'])
-// Progression 的替换键与 UI 的登记一致。
+// 模组仓的替换键一律用各工程自身的 group 与工程名，与 Human、UI 等仓的登记一致：
+// 完整装配按坐标重映射模组时 Loom 按真实坐标重新加入其传递库，键相同才会替换到同一组合工程。
 kizunaWorkspace.includeSource('progression', [
-        client: 'local.progression:client',
-        server: 'local.progression:server',
-        shared: 'local.progression:shared',
-        fabric: 'local.progression:fabric'
+        client: 'dev.kizuna.meridian.progression:client',
+        server: 'dev.kizuna.meridian.progression:server',
+        shared: 'dev.kizuna.meridian.progression:shared',
+        fabric: 'dev.kizuna.meridian.progression:fabric'
 ])
-// 人体与 UI 是模组依赖，完整装配按坐标重映射时 Loom 按真实坐标重新加入其传递库，替换键用各工程自身的 group 与工程名。
 kizunaWorkspace.includeSource('human', [
         client: 'dev.kizuna.meridian.human:client',
         server: 'dev.kizuna.meridian.human:server',

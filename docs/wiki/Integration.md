@@ -43,7 +43,7 @@ xvfb-run -a ./gradlew :client:runSmoke --offline --console=plain --no-watch-fs
 
 离线命令要求依赖已缓存，首次构建可去掉 `--offline`。Windows 使用 `gradlew.bat`，图形桌面直接执行 `:client:runSmoke`，无需 Xvfb。开发运行统一应用 Framework 的 `scripts/full-assembly.gradle`，固定装配 Meridian 九仓（含 Progression 和 Players-Animation）及 Inventory UI、BS3D 的 client/common 安装产物，不提供安装开关。源码依赖位置与必装关系是不同概念。
 
-本轮要求 UI checkout 已提供 `dev.kizuna.meridian.ui.api.MeridianRouteProvider`；组合构建直接编译 UI 当前源码。`local.meridian:*` 和 `local.progression:*` 是本地替换键；Human、UI 与 Inventory UI 的替换键用各自工程的 group 与工程名，同样不是已发布的 Maven 坐标。
+本轮要求 UI checkout 已提供 `dev.kizuna.meridian.ui.api.MeridianRouteProvider`；组合构建直接编译 UI 当前源码。`local.meridian:*` 是 Framework 的本地替换键；Progression、Human、UI 与 Inventory UI 的替换键用各自工程的 group 与工程名，同样不是已发布的 Maven 坐标。
 
 安装产物为 `client/build/libs/kizuna-meridian-human-ui-addon-client-0.1.0-SNAPSHOT.jar`。Meridian 各 Addon 按适用端整套安装；真实玩家由 Human Fabric 权威宿主提供身体快照。本包不内嵌任何依赖，`fabric.mod.json` 强制声明 `meridian_human` 与 `meridian_ui`，UI 也强制声明 `meridian_human_ui`；Gradle 以组合工程的 named 开发 JAR 编译 UI、Inventory UI 与 Progression，人体展示包作为普通库直接依赖；共享脚本用 `modLocalRuntime` / `localRuntime` 按替换坐标或安装产物装配其他模组。开发装配不沿 composite 发布变体传递，避免其他工程重复加载当前工程的安装 JAR。缺包由 Loader 拒绝启动，客户端路线必须唯一装配且返回有效坐标。本仓仅客户端产物，不安装到专服。
 
