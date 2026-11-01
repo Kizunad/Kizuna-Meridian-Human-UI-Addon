@@ -172,7 +172,12 @@ final class CultivationJourney {
                     automaticCaptured = true;
                 }
                 if (!sentStart) {
-                    query(client, player -> command(player, "meridian qi set " + player.getScoreboardName() + " 61 all wall 0.099"));
+                    // 动员停下后仍有低密度真元落回部分经脉内腔，把整条经脉稀释到候选密度以下，剩余候选随时序在 50 元上下波动；
+                    // 起突破前与外壁一起用 DEPOSIT 阶段同一条正式命令补回候选内腔，两项门槛都由本步备齐。
+                    query(client, player -> {
+                        command(player, "meridian qi set " + player.getScoreboardName() + " 80 all lumen 0.099");
+                        command(player, "meridian qi set " + player.getScoreboardName() + " 61 all wall 0.099");
+                    });
                     sentStart = true;
                 } else if (wall() >= 60) {
                     send(CultivationInput.Operation.START_BREAKTHROUGH);
