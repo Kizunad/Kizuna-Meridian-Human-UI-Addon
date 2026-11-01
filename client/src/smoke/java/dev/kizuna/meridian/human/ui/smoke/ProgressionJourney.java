@@ -84,7 +84,10 @@ final class ProgressionJourney {
             client.createWorldOpenFlows().openWorld(world, () -> client.gui.setScreen(new TitleScreen()));
             return false;
         }
-        if (client.player == null || !ClientProgression.synchronizedWithServer()) {
+        // 26.2 服务端在收到客户端「载入完成」回执前丢弃使用物品等操作（进世界、重进与重生后各一次），
+        // 真实玩家在载入画面结束前同样无法操作，先等这一回执再推进阶段。
+        if (client.player == null || !client.getConnection().hasClientLoaded()
+                || !ClientProgression.synchronizedWithServer()) {
             return false;
         }
         ticks++;
