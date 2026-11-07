@@ -23,6 +23,8 @@ final class ResponsiveJourney {
     };
     private static final int SCENARIO_TICKS = 90;
     private static final int HINT_RESERVED_HEIGHT = 24;
+    private static final List<String> THEMES = List.of(
+            BuiltinThemes.INK_JADE.id(), BuiltinThemes.XUAN_PAPER.id(), BuiltinThemes.XUAN_HUANG.id());
     private int ticks;
     private boolean done;
     private boolean tutorialSeen;
@@ -97,13 +99,8 @@ final class ResponsiveJourney {
     }
 
     private void selectTheme(int scenario) {
-        // 同一组件跨深浅主题继续接收输入，截图同时覆盖不同 GUI 缩放下的文字对比度。
-        String theme;
-        if (scenario % 2 == 0) {
-            theme = BuiltinThemes.DARK.id();
-        } else {
-            theme = BuiltinThemes.LIGHT.id();
-        }
+        // 同一组件轮流使用三套主题，截图覆盖不同 GUI 缩放下的文字、控制按钮与输入状态。
+        String theme = THEMES.get(scenario % THEMES.size());
         InventoryUiClient.runtime().theme(theme);
     }
 
