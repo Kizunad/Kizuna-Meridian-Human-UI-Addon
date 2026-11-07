@@ -19,6 +19,7 @@ import static dev.kizuna.meridian.human.ui.smoke.UiChecks.*;
 
 /** 整合服内的手动吐纳回归：真实鼠标对准服务端粒子吸呼，验证布局、旋转、空气上下限、音效、消耗、关窗停止和独立重开。 */
 final class ManualBreathingJourney {
+    private static final int RESOURCE_BOTTOM_MARGIN = 28;
     private int ticks;
     private boolean done;
     private WindowKey body;
@@ -176,8 +177,10 @@ final class ManualBreathingJourney {
         int centerX = canvas.x() + canvas.width() / 2;
         int bottomY = canvas.y() + canvas.height();
         // 余力在顶部，肺图靠左下，纳入量靠右下，按钮居中并在底部提示上方。
-        require(reserve.y() == canvas.y() + 12 && air.x() == canvas.x() + 12 && air.y() + air.height() == bottomY - 12
-                && qi.x() + qi.width() == canvas.x() + canvas.width() - 12 && qi.y() + qi.height() == bottomY - 12
+        require(reserve.y() == canvas.y() + 12 && air.x() == canvas.x() + 12
+                && air.y() + air.height() == bottomY - RESOURCE_BOTTOM_MARGIN
+                && qi.x() + qi.width() == canvas.x() + canvas.width() - 12
+                && qi.y() + qi.height() == bottomY - RESOURCE_BOTTOM_MARGIN
                 && Math.abs(action.x() + action.width() / 2 - centerX) <= 1 && action.y() + action.height() == bottomY - 34,
                 "吐纳控件位置不符合场景布局");
         require(reserve.tooltip().size() == 3 && !qi.tooltip().isEmpty(), "资源悬浮明细不完整");

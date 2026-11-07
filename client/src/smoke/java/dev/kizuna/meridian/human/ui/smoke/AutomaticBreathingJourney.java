@@ -32,6 +32,7 @@ final class AutomaticBreathingJourney {
         }
         var breath = panel.canvas().breathingView();
         if (!begun && ticks == 20) {
+            require(!breath.getActive(), "自动验收开始前旧吐纳未停止：" + breath);
             attention = breath.getAttentionRatio();
             click(client, panel.root().childById(UIComponent.class, "breathing-automatic"));
             click(client, panel.root().childById(UIComponent.class, "breathing-start"));

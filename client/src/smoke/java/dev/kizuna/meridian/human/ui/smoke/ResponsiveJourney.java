@@ -1,6 +1,9 @@
 package dev.kizuna.meridian.human.ui.smoke;
 
 import dev.kizuna.inventoryui.client.InventoryUiClient;
+import dev.kizuna.inventoryui.theme.BuiltinThemes;
+import dev.kizuna.inventoryui.theme.ThemeTokens;
+import io.wispforest.owo.ui.component.LabelComponent;
 import dev.kizuna.inventoryui.window.UiWindowManager.WindowKey;
 import dev.kizuna.meridian.ui.client.BodyUiModule;
 import io.wispforest.owo.ui.container.ScrollContainer;
@@ -19,6 +22,7 @@ final class ResponsiveJourney {
             {1440, 1000, 2}, {1440, 1000, 4}, {960, 720, 3}, {1920, 1080, 0}, {1920, 1080, 2}
     };
     private static final int SCENARIO_TICKS = 90;
+    private static final int HINT_RESERVED_HEIGHT = 24;
     private int ticks;
     private boolean done;
     private boolean tutorialSeen;
@@ -27,6 +31,7 @@ final class ResponsiveJourney {
     private UIComponent bodyRoot;
     private UIComponent breathingRoot;
     private int informationTop;
+    private String originalTheme;
 
     boolean tick(Minecraft client, BodyUiModule module) throws Exception {
         // 每组先调整真实窗口，再检查身体窗口和吐纳窗口；吐纳从第一组开始保持服务端活动。
@@ -40,6 +45,7 @@ final class ResponsiveJourney {
             return true;
         }
         if (scenario == 0 && step == 1) {
+            originalTheme = InventoryUiClient.runtime().theme();
             client.gui.setScreen(null);
             InventoryUiClient.runtime().workspace().windows().reset();
             InventoryUiClient.runtime().openWorkspace();
@@ -47,6 +53,7 @@ final class ResponsiveJourney {
             GLFW.glfwFocusWindow(client.getWindow().handle());
         }
         if (step == 2) {
+            selectTheme(scenario);
             int[] size = SIZES[scenario];
             GLFW.glfwSetWindowSize(client.getWindow().handle(), size[0], size[1]);
             client.options.guiScale().set(size[2]);
@@ -89,6 +96,17 @@ final class ResponsiveJourney {
         return false;
     }
 
+    private void selectTheme(int scenario) {
+        // 同一组件跨深浅主题继续接收输入，截图同时覆盖不同 GUI 缩放下的文字对比度。
+        String theme;
+        if (scenario % 2 == 0) {
+            theme = BuiltinThemes.DARK.id();
+        } else {
+            theme = BuiltinThemes.LIGHT.id();
+        }
+        InventoryUiClient.runtime().theme(theme);
+    }
+
     private void checkBody(Minecraft client, BodyUiModule module, int scenario) {
         // 身体组件、选择与图层跨尺寸保留；各区域都在内容区内且互不覆盖。
         var panel = module.panel();
@@ -100,6 +118,9 @@ final class ResponsiveJourney {
                     && panel.visibleLayers().equals(Set.of("organs")), "改变分辨率丢失了身体组件、选择或图层状态");
         }
         var root = panel.root();
+        var title = root.childById(LabelComponent.class, "body-title");
+        require(title.color().get().argb() == InventoryUiClient.runtime().color(ThemeTokens.TEXT),
+                "已打开的检视窗口未跟随主题更新文字颜色");
         UIComponent layers = root.childById(UIComponent.class, "layers-scroll");
         UIComponent details = root.childById(UIComponent.class, "information-scroll");
         for (UIComponent area : List.of(layers, details, panel.canvas(),
@@ -135,6 +156,8 @@ final class ResponsiveJourney {
         for (int index = 0; index < controls.size(); index++) {
             UIComponent control = controls.get(index);
             requireInside(panel.canvas(), control);
+            int footerTop = panel.canvas().y() + panel.canvas().height() - HINT_RESERVED_HEIGHT;
+            require(control.y() + control.height() <= footerTop, "吐纳控件覆盖底部操作提示：" + control.id());
             require(root.childAt(control.x() + control.width() / 2, control.y() + control.height() / 2) == control,
                     "吐纳控件的命中与绘制不一致：" + control.id());
             for (int other = index + 1; other < controls.size(); other++) {
@@ -149,6 +172,7 @@ final class ResponsiveJourney {
 
     private void finish(Minecraft client, BodyUiModule module) {
         // 结束吐纳并关闭两个窗口，恢复默认窗口尺寸，后续旅程从同一基准开始。
+        InventoryUiClient.runtime().theme(originalTheme);
         require(tutorialSeen, "首次开始吐纳没有先显示操作指引");
         InventoryUiClient.runtime().workspace().windows().close(breathing);
         InventoryUiClient.runtime().workspace().windows().close(body);

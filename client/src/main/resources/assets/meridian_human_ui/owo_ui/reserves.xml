@@ -1,0 +1,13 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<owo-ui>
+    <templates>
+        <reserves-panel>
+            <flow-layout direction="vertical" id="wall-reserve-panel">
+                <sizing>
+                    <horizontal method="fill">100</horizontal>
+                    <vertical method="fill">100</vertical>
+                </sizing>
+            </flow-layout>
+        </reserves-panel>
+    </templates>
+</owo-ui>

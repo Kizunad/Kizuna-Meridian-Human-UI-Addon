@@ -1,6 +1,7 @@
 package dev.kizuna.meridian.human.ui.smoke;
 
 import dev.kizuna.inventoryui.client.InventoryUiClient;
+import dev.kizuna.inventoryui.theme.ThemeTokens;
 import dev.kizuna.inventoryui.window.UiWindowManager.WindowKey;
 import dev.kizuna.meridian.human.client.HumanPresentation;
 import dev.kizuna.meridian.protocol.pb.BodyMessages.BodySnapshot;
@@ -18,7 +19,6 @@ import static dev.kizuna.meridian.human.ui.smoke.UiChecks.*;
 
 /** 整合服内的“检视”回归：真实玩家身体的五层模型、点击选取、聚焦、信息、刷新、勾选组合与关窗清理。 */
 final class BodyViewerJourney {
-    private static final int CANVAS_BACKGROUND = 0x131F25;
     private enum Stage { OPEN, SURFACE, SKELETON, MUSCLES, REAR_MUSCLE, ORGANS, REFRESH, OVERVIEW, ALL_ORGANS,
         MERIDIANS, ALL_MERIDIANS, CHECKBOXES, ASSEMBLY, EYE, CLOSE, DONE }
     private Stage stage = Stage.OPEN;
@@ -48,7 +48,8 @@ final class BodyViewerJourney {
                     break;
                 }
                 capture(client, "body-surface.png");
-                requireModelPixels(client, module.panel().canvas(), CANVAS_BACKGROUND);
+                requireModelPixels(client, module.panel().canvas(),
+                        InventoryUiClient.runtime().color(ThemeTokens.PREVIEW_BACKGROUND));
                 module.panel().layer("skeleton");
                 next(Stage.SKELETON);
             }
@@ -181,7 +182,8 @@ final class BodyViewerJourney {
                 if (ticks < 15) {
                     break;
                 }
-                requireModelPixels(client, module.panel().canvas(), CANVAS_BACKGROUND);
+                requireModelPixels(client, module.panel().canvas(),
+                        InventoryUiClient.runtime().color(ThemeTokens.PREVIEW_BACKGROUND));
                 capture(client, "body-assembly.png");
                 module.panel().setLayerVisible("muscles", false);
                 module.panel().setLayerVisible("meridians", false);

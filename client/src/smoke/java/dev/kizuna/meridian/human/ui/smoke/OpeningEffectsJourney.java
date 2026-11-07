@@ -32,7 +32,8 @@ import java.util.function.Consumer;
 
 /** 正常开脉的整合服＋GPU 回归；Windows 与 Linux 共用正式命令和输入入口。 */
 final class OpeningEffectsJourney {
-    private enum Stage { CREATE, SETUP, OPEN, START, RUNNING, SUCCESS, REFILLED, WARNING_START, WARNING, QUIET,
+    private static final int START_CONFIRM_TICKS = 40;
+    private enum Stage { CREATE, SETUP, OPEN, START, DETAILS, RUNNING, SUCCESS, REFILLED, WARNING_START, WARNING, QUIET,
         PAUSE, FAILED, DEBUG, COMPLETE, STATIC, DONE }
     private Stage stage = Stage.CREATE;
     private final String world = "opening-effects-" + System.currentTimeMillis();
@@ -89,7 +90,11 @@ final class OpeningEffectsJourney {
             body = work.join();
             work = null;
         }
-        if (module.cultivationPanel() != null) {
+        if (work == null && module.snapshot() != null) {
+            // 日常观察使用生产推送；健康宿主 inspect 会结时，不能用它高频改写验收中的身体版本。
+            body = module.snapshot();
+        }
+        if (module.cultivationPanel() != null && breathingInputAllowed()) {
             breathe();
         }
         switch (stage) {
@@ -116,12 +121,32 @@ final class OpeningEffectsJourney {
                 if (ticks < 20 || work != null) {
                     return;
                 }
-                query(client, player -> command(player, "meridian opening start left_lung_meridian"));
+                InventoryUiClient.runtime().open("meridian_ui:meridians", null);
+                var entry = module.meridianPanel().root().childById(UIComponent.class,
+                        "meridian-rail-meridian_ui-meridian_operation");
+                require(entry != null, "满足条件时未出现开脉入口");
+                UiChecks.requireSeparate(module.meridianPanel().canvas(), entry);
+                UiChecks.click(client, entry, 0);
+                next(Stage.DETAILS);
+            }
+            case DETAILS -> {
+                // 正式入口自动选择可开脉目标，图像和操作都经过真实窗口链。
+                if (ticks < 20 || module.openingOperationRoot() == null) {
+                    return;
+                }
+                var root = (io.wispforest.owo.ui.container.FlowLayout) module.openingOperationRoot();
+                require(root.childById(UIComponent.class, "opening-visual") != null, "开脉缺少主图");
+                capture(client, "opening-00-diagram.png");
+                UiChecks.click(client, root.childById(UIComponent.class, "opening-action"), 0);
                 next(Stage.RUNNING);
             }
             case RUNNING -> {
                 if (body == null) {
                     return;
+                }
+                if (ticks >= START_CONFIRM_TICKS && !module.snapshot().hasOpeningTask()) {
+                    capture(client, "opening-start-failed.png");
+                    throw new IllegalStateException("点击开脉后未收到权威任务");
                 }
                 double progress = module.snapshot().getOpeningTask().getHeldMillis() / 15000.0;
                 if (!early && progress > .08) {
@@ -269,9 +294,14 @@ final class OpeningEffectsJourney {
             }
             default -> { /* 生命周期阶段无需操作。 */ }
         }
-        if (work == null && ticks % 2 == 0 && stage != Stage.DONE) {
-            query(client, player -> {});
+    }
+
+    private boolean breathingInputAllowed() {
+        // 点击另一窗口时遵守生产焦点释放；确认开脉后再继续手动吐纳维持任务。
+        if (stage == Stage.START || stage == Stage.DETAILS) {
+            return false;
         }
+        return stage != Stage.RUNNING || module.snapshot().hasOpeningTask();
     }
 
     private void breathe() {

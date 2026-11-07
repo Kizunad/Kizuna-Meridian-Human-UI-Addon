@@ -12,15 +12,32 @@ import dev.kizuna.meridian.ui.client.BodyUiModule;
 import net.fabricmc.fabric.api.client.networking.v1.ClientPlayNetworking;
 import net.minecraft.client.Minecraft;
 import net.minecraft.client.Screenshot;
+import net.minecraft.client.input.KeyEvent;
 import net.minecraft.server.level.ServerPlayer;
 import net.minecraft.util.ARGB;
 import java.util.UUID;
 import java.util.concurrent.CompletableFuture;
 import java.util.function.BiConsumer;
+import org.lwjgl.glfw.GLFW;
 
 /** 完整单机验收：使用正式命令和客户端网络输入，在真实整合服时间下运行。 */
 final class CultivationJourney {
-    private enum Stage { PREPARE, OPEN, AUTOMATIC_READY, AUTOMATIC_RUNNING, MANUAL, DEPOSIT, MOBILIZE, FAIL_START, FAIL_RUNNING, FAIL_CHECK, RECOVER, SUCCESS_START, SUCCESS_RUNNING, DONE }
+    private final CultivationLayoutCheck layoutCheck = new CultivationLayoutCheck();
+    private final WallReserveJourney reserveJourney = new WallReserveJourney();
+    private static final int MOTION_INTERVAL = 4;
+    private static final int MOTION_FRAMES = 32;
+    private static final int MANUAL_LAPS = 2;
+    private static final int MANUAL_GATES = 8;
+    private static final int MANUAL_LAP_LIMIT = 5;
+    private static final int BREAKTHROUGH_VISIBLE_TICKS = 10;
+    private int breakthroughVisibleTicks;
+    private int motionFrames;
+    private int manualStartLaps = -1;
+    private int manualStartGates;
+    private enum Stage {
+        PREPARE, OPEN, AUTOMATIC_READY, AUTOMATIC_RUNNING, MANUAL, RESERVES, DEPOSIT, MOBILIZE,
+        FAIL_START, FAIL_RUNNING, FAIL_CHECK, RECOVER, SUCCESS_START, SUCCESS_RUNNING, DONE
+    }
     private Stage stage = Stage.PREPARE;
     private CompletableFuture<BodySnapshot> work;
     private BodySnapshot body;
@@ -77,8 +94,8 @@ final class CultivationJourney {
                 }
                 require(state.getPracticedGates() == 0, "自动解锁验收必须从零次手动冲关开始");
                 Screenshot.grab(client.gameDirectory, "middle-jiao-unlocked.png", client.gameRenderer.mainRenderTarget(), 1, ignored -> {});
-                clickControl(client, module, 1);
-                clickControl(client, module, 0);
+                clickControl(client, module, "middle-jiao-automatic");
+                clickControl(client, module, "middle-jiao-start");
                 next(Stage.AUTOMATIC_RUNNING);
             }
             case AUTOMATIC_RUNNING -> {
@@ -86,17 +103,29 @@ final class CultivationJourney {
                     break;
                 }
                 require(state.getRunning() && state.getAutomatic(), "读卷后真实复选框未能启动自动中焦");
+                if (!layoutCheck.tick(client, module)) {
+                    break;
+                }
                 Screenshot.grab(client.gameDirectory, "middle-jiao-automatic.png", client.gameRenderer.mainRenderTarget(), 1, ignored -> {});
                 automaticCaptured = true;
-                clickControl(client, module, 1);
+                clickControl(client, module, "middle-jiao-automatic");
                 next(Stage.MANUAL);
             }
             case MANUAL -> {
+                if (state.getAutomatic()) {
+                    break;
+                }
+                if (manualStartLaps < 0) {
+                    manualStartLaps = state.getLaps();
+                    manualStartGates = state.getPracticedGates();
+                    focusScene(client, module);
+                }
+                captureMotion(client, state);
                 require(state.getReason().isEmpty() || !state.getReason().contains("渗漏"), "真实推力发生非预期损伤");
                 if (state.getThrust() < .95 && !state.getPushing()) {
-                    send(CultivationInput.Operation.PUSH_ON);
+                    client.gui.screen().keyPressed(new KeyEvent(GLFW.GLFW_KEY_G, 0, 0));
                 } else if (state.getThrust() >= 1 && state.getPushing()) {
-                    send(CultivationInput.Operation.PUSH_OFF);
+                    client.gui.screen().keyReleased(new KeyEvent(GLFW.GLFW_KEY_G, 0, 0));
                 }
                 double offsetMillis = body.getSettledAt().getElapsedMillis() - state.getGateRetryUntil();
                 if (state.getGateRetryUntil() > 0 && state.getExhaling() && Math.abs(offsetMillis) <= 350) {
@@ -111,7 +140,9 @@ final class CultivationJourney {
                         });
                     }
                     if (greenCaptured || offsetMillis >= 0) {
-                        send(CultivationInput.Operation.STRIKE_GATE);
+                        var strike = new KeyEvent(GLFW.GLFW_KEY_SPACE, 0, 0);
+                        client.gui.screen().keyPressed(strike);
+                        client.gui.screen().keyReleased(strike);
                     }
                 } else if (!redCaptured && state.getGateRetryUntil() > 0 && state.getExhaling()
                         && offsetMillis < -(state.getGateWindowMillis() + 150)) {
@@ -125,15 +156,23 @@ final class CultivationJourney {
                         });
                     }
                 }
-                require(state.getLaps() < 5, "五圈内没有拍到红绿关口两态：red=" + redCaptured + " green=" + greenCaptured);
-                if (state.getLaps() >= 2 && redCaptured && greenCaptured) {
-                    require(state.getPracticedGates() >= 8, "真实手动冲关未累计熟练度");
+                require(state.getLaps() - manualStartLaps < MANUAL_LAP_LIMIT,
+                        "手动五圈内未完成冲关或红绿截图：red=" + redCaptured + " green=" + greenCaptured);
+                if (state.getLaps() - manualStartLaps >= MANUAL_LAPS
+                        && state.getPracticedGates() - manualStartGates >= MANUAL_GATES
+                        && redCaptured && greenCaptured) {
                     var transit = body.getTransitsList().stream().filter(item -> item.hasCircuit()).findFirst().orElseThrow();
                     require(transit.getCargo().getEntries(0).getDensity() > .01, "真实周天没有提纯");
                     Screenshot.grab(client.gameDirectory, "cultivation-manual.png", client.gameRenderer.mainRenderTarget(), 1, ignored -> {});
-                    send(CultivationInput.Operation.STOP);
-                    next(Stage.DEPOSIT);
+                    client.gui.screen().keyReleased(new KeyEvent(GLFW.GLFW_KEY_G, 0, 0));
+                    clickControl(client, module, "middle-jiao-start");
+                    next(Stage.RESERVES);
                     sentStart = false;
+                }
+            }
+            case RESERVES -> {
+                if (reserveJourney.tick(client, module)) {
+                    next(Stage.DEPOSIT);
                 }
             }
             case DEPOSIT -> {
@@ -180,8 +219,9 @@ final class CultivationJourney {
                     });
                     sentStart = true;
                 } else if (wall() >= 60) {
-                    send(CultivationInput.Operation.START_BREAKTHROUGH);
-                    next(stage == Stage.FAIL_START ? Stage.FAIL_RUNNING : Stage.SUCCESS_RUNNING);
+                    if (clickBreakthrough(client, module)) {
+                        next(stage == Stage.FAIL_START ? Stage.FAIL_RUNNING : Stage.SUCCESS_RUNNING);
+                    }
                 }
             }
             case FAIL_RUNNING -> {
@@ -239,6 +279,41 @@ final class CultivationJourney {
         return stage == Stage.DONE;
     }
 
+    private void captureMotion(Minecraft client, CultivationState state) {
+        // 从首次关口出现起连续等间隔截图，供检查收缩圈与真实在途光迹的动画。
+        if (motionFrames >= MOTION_FRAMES || ticks % MOTION_INTERVAL != 0
+                || (motionFrames == 0 && state.getGateRetryUntil() == 0)) {
+            return;
+        }
+        String name = String.format(java.util.Locale.ROOT, "middle-jiao-motion-%02d.png", motionFrames++);
+        UiChecks.capture(client, name);
+    }
+
+    private boolean clickBreakthrough(Minecraft client, BodyUiModule module) throws Exception {
+        // 等到客户端权威投影可用，再经模型下方真实按钮启动，不能直接发测试输入绕过显隐。
+        InventoryUiClient.runtime().open("meridian_ui:meridians", null);
+        var state = module.snapshot().getAddonProgressOrThrow(HumanCultivation.PROGRESS)
+                .unpack(CultivationState.class);
+        if (!state.getBreakthroughAvailable()) {
+            breakthroughVisibleTicks = 0;
+            return false;
+        }
+        var panel = module.meridianPanel();
+        var entry = panel.root().childById(io.wispforest.owo.ui.core.UIComponent.class, "meridian-breakthrough");
+        require(entry != null, "满足条件时未显示突破按钮");
+        if (entry.width() == 0 || entry.height() == 0) {
+            return false;
+        }
+        if (++breakthroughVisibleTicks < BREAKTHROUGH_VISIBLE_TICKS) {
+            return false;
+        }
+        breakthroughVisibleTicks = 0;
+        UiChecks.requireSeparate(panel.canvas(), entry);
+        UiChecks.capture(client, "meridian-breakthrough-ready.png");
+        UiChecks.click(client, entry, 0);
+        return true;
+    }
+
     private void next(Stage stage) {
         // 日志标记用于区分真实权威阶段和只读光迹夹具。
         this.stage = stage;
@@ -246,12 +321,12 @@ final class CultivationJourney {
         System.out.println("CULTIVATION_SMOKE_STAGE " + stage);
     }
 
-    private static void clickControl(Minecraft client, BodyUiModule module, int index) {
-        // 经过真实屏幕命中链点击复选框或开始按钮，保护独立窗口中的控件遮挡问题。
-        var controls = module.practicePanel().root().childById(io.wispforest.owo.ui.core.UIComponent.class, "middle-jiao-controls");
-        double x = controls.x() + (index + .5) * Math.max(30, controls.width() / 5);
-        double y = controls.y() + 10;
-        client.gui.screen().mouseClicked(UiChecks.mouse(x, y, 0), false);
+    private static void clickControl(Minecraft client, BodyUiModule module, String id) {
+        // 按实际组件身份点击，布局变化不能让测试绕过屏幕命中或误点相邻操作。
+        var control = module.practicePanel().root().childById(io.wispforest.owo.ui.core.UIComponent.class, id);
+        double x = control.x() + control.width() / 2.0;
+        double y = control.y() + control.height() / 2.0;
+        client.gui.screen().mouseClicked(UiChecks.mouse(x, y, 0), false /* doubled */);
         client.gui.screen().mouseReleased(UiChecks.mouse(x, y, 0));
     }
 
@@ -286,9 +361,9 @@ final class CultivationJourney {
     }
 
     private static void gateColors(Minecraft client, BodyUiModule module, BiConsumer<int[], NativeImage> result) {
-        // 统计中焦控件区域内的纯红、纯绿像素，确认截图里真的出现红圈或绿圈。
-        // 控件范围在提交回读时取定，与回读到的那一帧一致；红绿计数在回读完成后连同该帧交给调用方。
-        var controls = module.practicePanel().root().childById(io.wispforest.owo.ui.core.UIComponent.class, "middle-jiao-controls");
+        // 只统计关口图像，人体或其他资源图的颜色不能冒充红绿冲关时机。
+        var controls = module.practicePanel().root()
+                .childById(io.wispforest.owo.ui.core.UIComponent.class, "middle-jiao-gate");
         double scale = client.getWindow().getGuiScale();
         int top = Math.max(0, (int) (controls.y() * scale));
         int left = Math.max(0, (int) (controls.x() * scale));
@@ -337,6 +412,16 @@ final class CultivationJourney {
                 throw new IllegalStateException(invalid);
             }
         }, server);
+    }
+
+    private static void focusScene(Minecraft client, BodyUiModule module) {
+        // 经真实鼠标链聚焦周天人体下方的空白画布，随后按键经过独立窗口。
+        var canvas = module.practicePanel().canvas();
+        double x = canvas.x() + canvas.width() / 2.0;
+        double y = canvas.y() + canvas.height() / 2.0;
+        var click = UiChecks.mouse(x, y, 0);
+        client.gui.screen().mouseClicked(click, false /* doubled */);
+        client.gui.screen().mouseReleased(click);
     }
 
     private void send(CultivationInput.Operation operation) {

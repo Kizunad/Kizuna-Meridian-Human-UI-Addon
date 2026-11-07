@@ -38,6 +38,8 @@ import java.util.function.Consumer;
 
 /** 完整整合服回归：真实拾取、物品右键、统一协议、保存重启和管理员撤权。 */
 final class ProgressionJourney {
+    private static final Set<String> PRACTICE_FEATURES = Set.of(
+            "meridian_ui:meridians", "meridian_ui:cultivation", "meridian_ui:practice");
     private enum Stage { CREATE, LOCKED, PICKUP, CANCEL, CANCELLED, EARLY, COMPLETED, READ,
         READING, LOCKED_MENU, NEW_SCROLL_SETUP, NEW_SCROLL_OPEN, NEW_SCROLL_READING, NEW_SCROLL_MENU, RESTORE_NOTES,
         UNLOCKED, RUNNING, RESET_READING, RESET, RESET_DONE, RESTORE, RESTART, REJOIN, DEAD, RESPAWN, DONE }
@@ -56,6 +58,7 @@ final class ProgressionJourney {
     private final BodyViewerJourney bodyViewer = new BodyViewerJourney();
     private final ResponsiveJourney responsive = new ResponsiveJourney();
     private final ManualBreathingJourney manualBreathing = new ManualBreathingJourney();
+    private final MeridianSceneJourney independentScenes = new MeridianSceneJourney();
 
     boolean tick(Minecraft client, BodyUiModule module) throws Exception {
         // 每一阶段等待真实权威或屏幕事实；右键解锁与播放结束分别验证。
@@ -94,7 +97,7 @@ final class ProgressionJourney {
         switch (stage) {
             case LOCKED -> {
                 require(!ClientProgression.canCultivate(), "新玩家不应解锁");
-                require(InventoryUiClient.runtime().workspace().features("修炼").isEmpty(), "未读时修炼入口泄漏");
+                require(visiblePracticeFeatures().isEmpty(), "未读时修炼入口泄漏");
                 boolean denied = false;
                 try {
                     InventoryUiClient.runtime().open("meridian_ui:meridians", null);
@@ -207,6 +210,7 @@ final class ProgressionJourney {
                 }
                 if (ticks == 20) {
                     Screenshot.grab(client.gameDirectory, "cultivation-menu-notes.png", client.gameRenderer.mainRenderTarget(), 1, ignored -> {});
+                    MeridianSceneJourney.locked(client, module);
                     client.gui.setScreen(null);
                     next(Stage.NEW_SCROLL_SETUP);
                 }
@@ -286,7 +290,7 @@ final class ProgressionJourney {
                 if (ticks < 25) {
                     return false;
                 }
-                require(InventoryUiClient.runtime().workspace().features("修炼").size() == 3, "解锁后修炼菜单不完整");
+                require(visiblePracticeFeatures().equals(PRACTICE_FEATURES), "解锁后修炼菜单不完整");
                 InventoryUiClient.runtime().openWorkspace();
                 // 本闭环用开脉验证真实主动会话撤权；吐纳撤权由 Human 的身体回归覆盖。
                 InventoryUiClient.runtime().open("meridian_ui:meridians", null);
@@ -325,7 +329,7 @@ final class ProgressionJourney {
                 }
                 require(module.meridianPanel() == null, "重置未关闭经脉内观窗口");
                 require(!(client.gui.screen() instanceof ScrollScreen), "重置未关闭进行中的残卷阅读");
-                require(InventoryUiClient.runtime().workspace().features("修炼").isEmpty(), "重置菜单仍显示修炼");
+                require(visiblePracticeFeatures().isEmpty(), "重置菜单仍显示需要残卷授权的练习入口");
                 requireFeatureDenied("meridian_ui:cultivation");
                 requireFeatureDenied("meridian_ui:practice");
                 finish(oldToken);
@@ -362,7 +366,7 @@ final class ProgressionJourney {
                         || !manualBreathing.tick(client, module)) {
                     return false;
                 }
-                if (!automaticBreathing.tick(client, module)) {
+                if (!independentScenes.tick(client, module) || !automaticBreathing.tick(client, module)) {
                     return false;
                 }
                 if (!cultivation.tick(client, module)) {
@@ -440,7 +444,7 @@ final class ProgressionJourney {
         // 真实服务端解锁后检查目录与屏幕按钮，防止只改数据列表却留下旧菜单入口。
         var runtime = InventoryUiClient.runtime();
         var features = runtime.workspace().features("修炼");
-        Set<String> actual = features.stream().map(feature -> feature.id()).collect(java.util.stream.Collectors.toSet());
+        Set<String> actual = visiblePracticeFeatures();
         require(actual.equals(expected), "修炼菜单权限不匹配：" + actual);
         runtime.openWorkspace();
         var screen = client.gui.screen();
@@ -460,6 +464,14 @@ final class ProgressionJourney {
         Set<String> expectedLabels = features.stream().map(feature -> feature.category() + " / " + feature.title())
                 .collect(java.util.stream.Collectors.toSet());
         require(menuLabels.equals(expectedLabels), "实际菜单与解锁目录不一致：" + menuLabels);
+    }
+
+    private static Set<String> visiblePracticeFeatures() {
+        // 功法配置始终可见；残卷权限只约束经脉、吐纳、中焦三个练习入口。
+        return InventoryUiClient.runtime().workspace().features("修炼").stream()
+                .map(feature -> feature.id())
+                .filter(PRACTICE_FEATURES::contains)
+                .collect(java.util.stream.Collectors.toSet());
     }
 
     private static void requireFeatureDenied(String featureId) {
