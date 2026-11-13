@@ -42,7 +42,7 @@ final class ProgressionJourney {
             "meridian_ui:meridians", "meridian_ui:cultivation", "meridian_ui:practice");
     private enum Stage { CREATE, LOCKED, PICKUP, CANCEL, CANCELLED, EARLY, COMPLETED, READ,
         READING, LOCKED_MENU, NEW_SCROLL_SETUP, NEW_SCROLL_OPEN, NEW_SCROLL_READING, NEW_SCROLL_MENU, RESTORE_NOTES,
-        UNLOCKED, RUNNING, RESET_READING, RESET, RESET_DONE, RESTORE, RESTART, REJOIN, DEAD, RESPAWN, DONE }
+        UNLOCKED, RUNNING, RESET_READING, RESET, RESET_DONE, RESTORE, RESTART, REJOIN, DEAD, RESPAWN, RESPAWN_BREATHING, DONE }
     private final String world = "progression-smoke-" + System.currentTimeMillis();
     private Stage stage = Stage.CREATE;
     // 三卷可能按正常速度播放，且包含检视、响应式与吐纳整体回归，总时限留足 40 分钟。
@@ -59,6 +59,7 @@ final class ProgressionJourney {
     private final ResponsiveJourney responsive = new ResponsiveJourney();
     private final ManualBreathingJourney manualBreathing = new ManualBreathingJourney();
     private final MeridianSceneJourney independentScenes = new MeridianSceneJourney();
+    private final RespawnBreathingJourney respawnBreathing = new RespawnBreathingJourney();
 
     boolean tick(Minecraft client, BodyUiModule module) throws Exception {
         // 每一阶段等待真实权威或屏幕事实；右键解锁与播放结束分别验证。
@@ -369,7 +370,7 @@ final class ProgressionJourney {
                 if (!independentScenes.tick(client, module) || !automaticBreathing.tick(client, module)) {
                     return false;
                 }
-                if (!cultivation.tick(client, module)) {
+                if (!cultivation.tick(client, module) || !respawnBreathing.beforeDeath(client, module)) {
                     return false;
                 }
                 oldPlayer = client.player;
@@ -398,6 +399,12 @@ final class ProgressionJourney {
                 }
                 require(client.player != oldPlayer, "未发生真实玩家实体替换");
                 require(ClientProgression.canCultivate(), "重生丢失阅读进度");
+                next(Stage.RESPAWN_BREATHING);
+            }
+            case RESPAWN_BREATHING -> {
+                if (!respawnBreathing.afterRespawn(client, module)) {
+                    return false;
+                }
                 client.gui.setScreen(null);
                 InventoryUiClient.runtime().workspace().windows().reset();
                 System.out.println("PROGRESSION_JOURNEY_OK pickup/read/cancel/early/unlock/reset/save/restart/respawn");
