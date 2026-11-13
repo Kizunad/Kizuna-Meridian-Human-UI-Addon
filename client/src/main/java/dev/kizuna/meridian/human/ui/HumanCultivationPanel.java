@@ -34,6 +34,18 @@ public final class HumanCultivationPanel implements MeridianSceneExtension {
     }
 
     @Override
+    public String meridianGuide() {
+        // 开脉规则是人体的，通用经脉窗口只负责显示。
+        return HumanOpeningGuide.TEXT;
+    }
+
+    @Override
+    public List<net.minecraft.network.chat.Component> bodySummaryLines(BodySnapshot body) {
+        // 检视摘要多一行当前境界，寿元那行带悬浮说明。
+        return HumanVitalityPresentation.lines(body);
+    }
+
+    @Override
     public List<MeridianAction> actions(BodySnapshot body) {
         // 突破入口只读取服务端资格；执行中的入口保留进度，完成后自然移除。
         var state = CultivationActions.state(body);
