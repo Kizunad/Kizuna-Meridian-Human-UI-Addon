@@ -24,7 +24,7 @@ public final class HumanCultivationPanel implements MeridianSceneExtension {
         if (dev.kizuna.meridian.progression.client.ClientProgression.canUseMiddleJiao()) {
             return "";
         }
-        return "右键使用「中焦残卷」后，即可开始周天与自动修炼。";
+        return "还没使用过「中焦残卷」。它在沙漠神殿和丛林神庙的箱子里；找到后右键一次，即可开始周天与自动修炼，无须看完。";
     }
 
     @Override
