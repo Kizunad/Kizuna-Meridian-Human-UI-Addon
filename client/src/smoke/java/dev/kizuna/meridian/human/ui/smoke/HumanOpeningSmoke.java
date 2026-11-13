@@ -50,6 +50,10 @@ public final class HumanOpeningSmoke implements ClientModInitializer {
             new DataPageJourney().register();
             return;
         }
+        if (Boolean.getBoolean("meridian.advancementSmoke")) {
+            new AdvancementJourney().register();
+            return;
+        }
         // 验收按新玩家配置开始：删除上次运行留下的吐纳指引已读偏好，首次开始必须先显示指引。
         try {
             Files.deleteIfExists(FabricLoader.getInstance().getConfigDir().resolve("meridian-breathing-tutorial.txt"));
