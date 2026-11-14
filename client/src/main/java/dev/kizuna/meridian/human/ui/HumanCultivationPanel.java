@@ -5,6 +5,8 @@ import dev.kizuna.meridian.ui.api.MeridianSceneExtension;
 import dev.kizuna.meridian.ui.api.MeridianAction;
 import dev.kizuna.meridian.human.pb.CultivationMessages.CultivationInput.Operation;
 import dev.kizuna.meridian.progression.client.ClientProgression;
+import dev.kizuna.meridian.burden.fabric.client.BurdenClient;
+import java.util.ArrayList;
 import java.util.List;
 import net.minecraft.resources.Identifier;
 import dev.kizuna.meridian.ui.client.BodyCanvas;
@@ -41,8 +43,10 @@ public final class HumanCultivationPanel implements MeridianSceneExtension {
 
     @Override
     public List<net.minecraft.network.chat.Component> bodySummaryLines(BodySnapshot body) {
-        // 检视摘要多一行当前境界，寿元那行带悬浮说明。
-        return HumanVitalityPresentation.lines(body);
+        // 检视摘要：当前境界、年龄和寿元，再接一行服务端发来的负重读数；每行各带悬浮说明。
+        var lines = new ArrayList<>(HumanVitalityPresentation.lines(body));
+        lines.add(HumanBurdenLine.of(BurdenClient.reading()));
+        return List.copyOf(lines);
     }
 
     @Override

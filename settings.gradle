@@ -17,6 +17,9 @@ include 'client'
 // UI 只登记 Progression client/shared，所以 Framework、Inventory UI、Progression 依次排在它们之前。
 kizunaWorkspace.includeSource('framework', [client: 'local.meridian:client', server: 'local.meridian:server'])
 kizunaWorkspace.includeSource('inventory-ui', ['': 'dev.kizuna.inventoryui:kizuna-inventory-ui-framework', server: 'dev.kizuna.inventoryui:server'])
+// 负重附属带进来的 Weights 客户端按真实坐标依赖 BS3D client，而 Progression、Human 嵌套的构建只登记 BS3D server，
+// 所以 BS3D 排在它们之前，两个模块都列出。
+kizunaWorkspace.includeSource('bs3d', [client: 'dev.kizuna.backpack3d:client', server: 'dev.kizuna.backpack3d:server'])
 // 模组仓的替换键一律用各工程自身的 group 与工程名，与 Human、UI 等仓的登记一致：
 // 依赖处按真实坐标声明这些模组，键相同才会替换到同一组合工程。
 kizunaWorkspace.includeSource('progression', [
@@ -32,3 +35,5 @@ kizunaWorkspace.includeSource('human', [
         fabric: 'dev.kizuna.meridian.human:fabric'
 ])
 kizunaWorkspace.includeSource('ui', [client: 'dev.kizuna.meridian.ui:client'])
+// 检视摘要的负重读数来自必装的负重附属；它自己再组合 Weights，Framework、BS3D 和 Human 以上面的登记为准。
+kizunaWorkspace.includeSource('burden', [fabric: 'dev.kizuna.meridian.burden:fabric'])

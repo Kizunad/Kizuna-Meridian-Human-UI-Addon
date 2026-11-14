@@ -50,6 +50,10 @@ public final class HumanOpeningSmoke implements ClientModInitializer {
             new DataPageJourney().register();
             return;
         }
+        if (Boolean.getBoolean("meridian.burdenSmoke")) {
+            new BurdenJourney().register();
+            return;
+        }
         if (Boolean.getBoolean("meridian.advancementSmoke")) {
             new AdvancementJourney().register();
             return;

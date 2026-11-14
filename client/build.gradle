@@ -18,6 +18,8 @@ dependencies {
     // 修炼通道只在 Human 的 Fabric 模组 HumanChannels 定义一份，字节通道类型来自 Framework 的 Fabric 模组。
     compileOnly 'dev.kizuna.meridian.human:fabric'
     compileOnly 'dev.kizuna.meridian:fabric'
+    // 负重读数的包和文字只在负重附属定义一份；它的服务端依赖不进本仓的类路径。
+    compileOnly('dev.kizuna.meridian.burden:fabric') { transitive = false }
     // 人体展示包是普通 Java 库，不在完整装配清单的运行模块里，由本仓直接装入。
     implementation('dev.kizuna.meridian.human:client') { transitive = false }
     implementation 'local.meridian:client'
@@ -30,6 +32,7 @@ dependencies {
     testImplementation 'dev.kizuna.meridian.human:server'
     // 单元测试直接使用 UI 的路线类型，测试类路径单独补上同一份 JAR。
     testImplementation 'dev.kizuna.meridian.ui:client'
+    testImplementation('dev.kizuna.meridian.burden:fabric') { transitive = false }
 }
 
 test { useJUnit() }
@@ -69,6 +72,7 @@ loom {
             property 'meridian.revivalSmoke', providers.gradleProperty('revivalSmoke').getOrElse('false')
             property 'meridian.dataPageSmoke', providers.gradleProperty('dataPageSmoke').getOrElse('false')
             property 'meridian.advancementSmoke', providers.gradleProperty('advancementSmoke').getOrElse('false')
+            property 'meridian.burdenSmoke', providers.gradleProperty('burdenSmoke').getOrElse('false')
             programArgs '--width', '1440', '--height', '1000'
         }
     }

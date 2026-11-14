@@ -20,6 +20,7 @@
     "meridian_framework": "*",
     "meridian_human": "0.1.0-SNAPSHOT",
     "meridian_ui": "0.1.0-SNAPSHOT",
-    "meridian_progression_client": "*"
+    "meridian_progression_client": "*",
+    "meridian_burden": "*"
   }
 }
