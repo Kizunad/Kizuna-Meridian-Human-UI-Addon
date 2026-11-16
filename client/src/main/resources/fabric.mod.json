@@ -21,6 +21,7 @@
     "meridian_human": "0.1.0-SNAPSHOT",
     "meridian_ui": "0.1.0-SNAPSHOT",
     "meridian_progression_client": "*",
-    "meridian_burden": "*"
+    "meridian_burden": "*",
+    "meridian_vanilla_healing": "*"
   }
 }

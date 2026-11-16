@@ -8,6 +8,7 @@ import dev.kizuna.meridian.progression.client.ClientProgression;
 import dev.kizuna.meridian.burden.fabric.client.BurdenClient;
 import java.util.ArrayList;
 import java.util.List;
+import net.minecraft.client.Minecraft;
 import net.minecraft.resources.Identifier;
 import dev.kizuna.meridian.ui.client.BodyCanvas;
 import dev.kizuna.meridian.ui.client.BodyScene;
@@ -43,9 +44,13 @@ public final class HumanCultivationPanel implements MeridianSceneExtension {
 
     @Override
     public List<net.minecraft.network.chat.Component> bodySummaryLines(BodySnapshot body) {
-        // 检视摘要：当前境界、年龄和寿元，再接一行服务端发来的负重读数；每行各带悬浮说明。
+        // 检视摘要：当前境界、年龄和寿元，再接一行服务端发来的负重读数；身上有伤势时再接一行伤势。每行各带悬浮说明。
         var lines = new ArrayList<>(HumanVitalityPresentation.lines(body));
         lines.add(HumanBurdenLine.of(BurdenClient.reading()));
+        var player = Minecraft.getInstance().player;
+        if (player != null) {
+            HumanInjuryLine.of(HumanInjuryLine.carried(player.getActiveEffects())).ifPresent(lines::add);
+        }
         return List.copyOf(lines);
     }
 
