@@ -8,7 +8,17 @@
 - 新增和修改的方法、构造器都应有内部中文意图注释，解释业务原因，避免逐行翻译。
 - 光迹仅装饰真实运输；不能凭坐标新增连接、入账、开脉或改变服务端判定。
 - 跨端身体通信仍复用框架 Protobuf；本地客户端回调直接使用 Java，不复制协议或模型。
-- 文档编辑源为 `docs/wiki/`，README 只作入口。交付运行构建、必要整体回归、客户端内观 smoke 和文档检查。
+- 文档编辑源为 `docs/wiki/`，README 只作入口。交付运行必要整体回归、客户端内观 smoke 和文档检查。
 - 仅保留必要整体 Test；临时探针验证后清理，测试入口不进入发布 JAR。
 - 修改使用 patch/Edit，路径用双引号。保留用户修改，提交、推送、远端建仓分别依用户授权执行。
 - PolyForm Noncommercial 1.0.0；第三方依赖保留各自许可，未发布产物不编造 Maven 坐标。
+
+## 构建和测试
+
+构建、测试一律走工作区的 `kz`（`~/Code/Kizuna-remote-session/scripts/kz`），不直接运行 `./gradlew`。细则以 `~/Code/Kizuna-remote-session/handoff/codex-worker-rules.md` 为准，动手前先读。
+
+- 单测、构建和服务端 GameTest：`kz test ~/Code/<本仓的 worktree>`
+- 要带上别的仓的 worktree 一起测：每个加一次 `--with ~/Code/<那个仓的 worktree>`
+- 客户端测试：`kz client ~/Code/<本仓的 worktree>` 列出有哪些项，`kz client ~/Code/<本仓的 worktree> <项>` 跑其中一项
+- 要自己写 Gradle 参数时：`kz gradle ~/Code/<本仓的 worktree> -- <参数>`
+- 不提交、不推送；在自己的 worktree（`~/Code/wt-*`）里改，不改主目录。
