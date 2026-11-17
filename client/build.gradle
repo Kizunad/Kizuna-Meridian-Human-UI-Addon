@@ -56,6 +56,8 @@ dependencies {
     // 验收代码直接用组合工程的普通 JAR 编译（Human fabric 已在主源集编译类路径上）；运行依赖仍只由完整装配装入一次。
     smokeCompileOnly 'dev.kizuna.meridian.progression:fabric'
     smokeCompileOnly 'dev.kizuna.inventoryui:server'
+    // 冒烟在整合服 tick 中只读 Human 当前宿主，宿主接口类型由功法库提供；不进入发布 JAR。
+    smokeCompileOnly 'dev.kizuna.meridian.technique:server'
 }
 loom {
     mods {

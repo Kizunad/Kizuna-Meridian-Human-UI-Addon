@@ -4,6 +4,7 @@ import com.mojang.blaze3d.platform.NativeImage;
 import dev.kizuna.inventoryui.client.InventoryUiClient;
 import dev.kizuna.meridian.human.fabric.HumanChannels;
 import dev.kizuna.meridian.human.fabric.HumanHealthHost;
+import dev.kizuna.meridian.human.fabric.HumanUiSmokeInputs;
 import dev.kizuna.meridian.human.pb.CultivationMessages.*;
 import dev.kizuna.meridian.human.server.HumanCultivation;
 import dev.kizuna.meridian.protocol.pb.BodyMessages.*;
@@ -24,12 +25,31 @@ import org.lwjgl.glfw.GLFW;
 final class CultivationJourney {
     private final CultivationLayoutCheck layoutCheck = new CultivationLayoutCheck();
     private final WallReserveJourney reserveJourney = new WallReserveJourney();
+    private final HumanUiSmokeInputs inputs = new HumanUiSmokeInputs();
     private static final int MOTION_INTERVAL = 4;
     private static final int MOTION_FRAMES = 32;
     private static final int MANUAL_LAPS = 2;
     private static final int MANUAL_GATES = 8;
     private static final int MANUAL_LAP_LIMIT = 5;
     private static final int BREAKTHROUGH_VISIBLE_TICKS = 10;
+    private static final int VIEW_SETTLE_TICKS = 20;
+    private static final int QUERY_INTERVAL_TICKS = 3;
+    private static final int START_CONFIRM_TICKS = 40;
+    private static final int START_LIMIT_TICKS = 1200;
+    private static final int RECOVERY_LIMIT_TICKS = 4800;
+    private static final int INTERRUPT_AFTER_SECONDS = 2;
+    private static final int BREAKTHROUGH_SECONDS = 60;
+    private static final int GATE_INPUT_WINDOW_MILLIS = 350;
+    private static final int RED_CAPTURE_LEAD_MILLIS = 150;
+    private static final int GATE_CAPTURE_PIXELS = 200;
+    private static final int GREEN_ABSENCE_PIXELS = 50;
+    private static final double INITIAL_DENSITY = 0.01;
+    private static final double GAS_DENSITY = 0.1;
+    private static final double DEPOSIT_MINIMUM = 0.05;
+    private static final double STARTING_WALL_QI = 60;
+    private static final double RECOVERED_BRAIN_RATIO = 0.97;
+    private static final double FUEL_TOLERANCE = 1e-6;
+    private static final double PUSH_START_THRUST = 0.95;
     private int breakthroughVisibleTicks;
     private int motionFrames;
     private int manualStartLaps = -1;
@@ -48,10 +68,43 @@ final class CultivationJourney {
     private boolean redCaptured;
     private boolean greenCaptured;
     private boolean automaticCaptured;
+    private boolean pushHeld;
+    private long pushReleaseCount;
 
     boolean tick(Minecraft client, BodyUiModule module) throws Exception {
         // 一个查询完成后才进行下一步，测试不从客户端写入任何资源或成功标记。
+        inputs.check();
         ticks++;
+        if (!readBody()) {
+            return false;
+        }
+        if (stage == Stage.DONE) {
+            return true;
+        }
+        if (stage == Stage.PREPARE) {
+            prepare(client);
+            return false;
+        }
+        if (body == null) {
+            query(client, player -> {});
+            return false;
+        }
+        CultivationState state;
+        if (body.containsAddonProgress(HumanCultivation.PROGRESS)) {
+            state = body.getAddonProgressOrThrow(HumanCultivation.PROGRESS).unpack(CultivationState.class);
+        } else {
+            state = CultivationState.getDefaultInstance();
+        }
+        sequence = Math.max(sequence, state.getLastSequence());
+        advance(client, module, state);
+        if (work == null && ticks % QUERY_INTERVAL_TICKS == 0) {
+            query(client, player -> {});
+        }
+        return stage == Stage.DONE;
+    }
+
+    private boolean readBody() {
+        // 查询完成前不重发，只读取已经完成的权威响应。
         if (work != null) {
             if (!work.isDone()) {
                 return false;
@@ -59,224 +112,287 @@ final class CultivationJourney {
             body = work.join();
             work = null;
         }
-        if (stage == Stage.DONE) {
-            return true;
-        }
-        if (stage == Stage.PREPARE) {
-            query(client, player -> {
-                // 只跳过八脉等待和攒量，手动门关、脾加工、燃料与相变均真实执行。
-                for (String id : HumanCultivation.MERIDIANS) {
-                    command(player, "meridian opening complete " + player.getScoreboardName() + " " + id);
-                }
-                // 登录后已有自然扩散在途，预留其真实返回体积，不能把库存单独灌到150元。
-                command(player, "meridian qi set " + player.getScoreboardName() + " 145 all lumen 0.01");
-            });
-            next(Stage.OPEN);
-            return false;
-        }
-        if (body == null) {
-            query(client, player -> {});
-            return false;
-        }
-        CultivationState state = body.containsAddonProgress("human:cultivation")
-                ? body.getAddonProgressOrThrow("human:cultivation").unpack(CultivationState.class)
-                : CultivationState.getDefaultInstance();
-        sequence = Math.max(sequence, state.getLastSequence());
+        return true;
+    }
+
+    private void prepare(Minecraft client) {
+        // 只通过正式命令准备资源，运输和费用仍真实结算。
+        query(client, player -> {
+            // 只跳过八脉等待和攒量，手动门关、脾加工、燃料与相变均真实执行。
+            for (String id : HumanCultivation.MERIDIANS) {
+                command(player, "meridian opening complete " + player.getScoreboardName() + " " + id);
+            }
+            // 登录后已有自然扩散在途，预留其真实返回体积，不能把库存单独灌到150元。
+            command(player, "meridian qi set " + player.getScoreboardName() + " 145 all lumen 0.01");
+        });
+        next(Stage.OPEN);
+    }
+
+    private void advance(Minecraft client, BodyUiModule module, CultivationState state) throws Exception {
+        // 每个阶段只处理对应回执和操作，查询调度留在入口统一进行。
         switch (stage) {
-            case OPEN -> {
-                InventoryUiClient.runtime().openWorkspace();
-                InventoryUiClient.runtime().open("meridian_ui:practice", null);
-                next(Stage.AUTOMATIC_READY);
-            }
-            case AUTOMATIC_READY -> {
-                if (ticks < 20 || module.practicePanel() == null) {
-                    break;
-                }
-                require(state.getPracticedGates() == 0, "自动解锁验收必须从零次手动冲关开始");
-                Screenshot.grab(client.gameDirectory, "middle-jiao-unlocked.png", client.gameRenderer.mainRenderTarget(), 1, ignored -> {});
-                clickControl(client, module, "middle-jiao-automatic");
-                clickControl(client, module, "middle-jiao-start");
-                next(Stage.AUTOMATIC_RUNNING);
-            }
-            case AUTOMATIC_RUNNING -> {
-                if (ticks < 20) {
-                    break;
-                }
-                require(state.getRunning() && state.getAutomatic(), "读卷后真实复选框未能启动自动中焦");
-                if (!layoutCheck.tick(client, module)) {
-                    break;
-                }
-                Screenshot.grab(client.gameDirectory, "middle-jiao-automatic.png", client.gameRenderer.mainRenderTarget(), 1, ignored -> {});
-                automaticCaptured = true;
-                clickControl(client, module, "middle-jiao-automatic");
-                next(Stage.MANUAL);
-            }
-            case MANUAL -> {
-                if (state.getAutomatic()) {
-                    break;
-                }
-                if (manualStartLaps < 0) {
-                    manualStartLaps = state.getLaps();
-                    manualStartGates = state.getPracticedGates();
-                    focusScene(client, module);
-                }
-                captureMotion(client, state);
-                require(state.getReason().isEmpty() || !state.getReason().contains("渗漏"), "真实推力发生非预期损伤");
-                if (state.getThrust() < .95 && !state.getPushing()) {
-                    client.gui.screen().keyPressed(new KeyEvent(GLFW.GLFW_KEY_G, 0, 0));
-                } else if (state.getThrust() >= 1 && state.getPushing()) {
-                    client.gui.screen().keyReleased(new KeyEvent(GLFW.GLFW_KEY_G, 0, 0));
-                }
-                double offsetMillis = body.getSettledAt().getElapsedMillis() - state.getGateRetryUntil();
-                if (state.getGateRetryUntil() > 0 && state.getExhaling() && Math.abs(offsetMillis) <= 350) {
-                    // 截图前确认画面里确实是绿圈；画面尚未变绿时最多等到目标时刻再按，保证仍在服务端窗口内。
-                    // 26.2 只能异步回读：同时只留一次回读，确认是绿圈的那一帧在回读完成时原样存档，随后的 tick 再按。
-                    if (!greenCaptured && UiChecks.framesRead()) {
-                        gateColors(client, module, (colors, image) -> {
-                            if (colors[1] > 200) {
-                                UiChecks.save(client, image, "middle-jiao-gate-green.png");
-                                greenCaptured = true;
-                            }
-                        });
-                    }
-                    if (greenCaptured || offsetMillis >= 0) {
-                        var strike = new KeyEvent(GLFW.GLFW_KEY_SPACE, 0, 0);
-                        client.gui.screen().keyPressed(strike);
-                        client.gui.screen().keyReleased(strike);
-                    }
-                } else if (!redCaptured && state.getGateRetryUntil() > 0 && state.getExhaling()
-                        && offsetMillis < -(state.getGateWindowMillis() + 150)) {
-                    // 红态取呼气中尚未到点的收缩圈，画面必须只有红圈没有绿圈；同样存下参与判定的那一帧。
-                    if (UiChecks.framesRead()) {
-                        gateColors(client, module, (colors, image) -> {
-                            if (colors[0] > 200 && colors[1] < 50) {
-                                UiChecks.save(client, image, "middle-jiao-gate-red.png");
-                                redCaptured = true;
-                            }
-                        });
-                    }
-                }
-                require(state.getLaps() - manualStartLaps < MANUAL_LAP_LIMIT,
-                        "手动五圈内未完成冲关或红绿截图：red=" + redCaptured + " green=" + greenCaptured);
-                if (state.getLaps() - manualStartLaps >= MANUAL_LAPS
-                        && state.getPracticedGates() - manualStartGates >= MANUAL_GATES
-                        && redCaptured && greenCaptured) {
-                    var transit = body.getTransitsList().stream().filter(item -> item.hasCircuit()).findFirst().orElseThrow();
-                    require(transit.getCargo().getEntries(0).getDensity() > .01, "真实周天没有提纯");
-                    Screenshot.grab(client.gameDirectory, "cultivation-manual.png", client.gameRenderer.mainRenderTarget(), 1, ignored -> {});
-                    client.gui.screen().keyReleased(new KeyEvent(GLFW.GLFW_KEY_G, 0, 0));
-                    clickControl(client, module, "middle-jiao-start");
-                    next(Stage.RESERVES);
-                    sentStart = false;
-                }
-            }
-            case RESERVES -> {
-                if (reserveJourney.tick(client, module)) {
-                    next(Stage.DEPOSIT);
-                }
-            }
-            case DEPOSIT -> {
-                if (state.getRunning()) {
-                    break;
-                }
-                if (!sentStart) {
-                    // 高于90%沉淀线，同时给停周天后重新启动的自然扩散留下预约空间。
-                    query(client, player -> command(player, "meridian qi set " + player.getScoreboardName() + " 1400 all lumen 0.099"));
-                    sentStart = true;
-                } else if (wall() > .05) {
-                    wallBefore = wall();
-                    query(client, player -> command(player, "meridian qi set " + player.getScoreboardName() + " 80 all lumen 0.099"));
-                    send(CultivationInput.Operation.MOBILIZE_ON);
-                    next(Stage.MOBILIZE);
-                }
-            }
-            case MOBILIZE -> {
-                double fatigue = body.getOrganStatesList().stream().filter(item -> item.getId().equals("spleen"))
-                        .findFirst().orElseThrow().getFatigueJoules();
-                if (wall() < wallBefore && fatigue > 0) {
-                    send(CultivationInput.Operation.MOBILIZE_OFF);
-                    send(CultivationInput.Operation.START_AUTOMATIC);
-                    next(Stage.FAIL_START);
-                    sentStart = false;
-                }
-            }
-            case FAIL_START, SUCCESS_START -> {
-                // 等待周天真正运转并取得批次；一分钟内未就绪说明服务端拒绝了启动，带原因失败。
-                require(ticks < 1200, diagnosis("周天一分钟内未进入可突破状态", state));
-                if (!state.getRunning() || body.getTransitsList().stream().noneMatch(QiTransit::hasCircuit)) {
-                    break;
-                }
-                if (!automaticCaptured && state.getAutomatic()) {
-                    Screenshot.grab(client.gameDirectory, "middle-jiao-automatic.png", client.gameRenderer.mainRenderTarget(), 1, ignored -> {});
-                    automaticCaptured = true;
-                }
-                if (!sentStart) {
-                    // 动员停下后仍有低密度真元落回部分经脉内腔，把整条经脉稀释到候选密度以下，剩余候选随时序在 50 元上下波动；
-                    // 起突破前与外壁一起用 DEPOSIT 阶段同一条正式命令补回候选内腔，两项门槛都由本步备齐。
-                    query(client, player -> {
-                        command(player, "meridian qi set " + player.getScoreboardName() + " 80 all lumen 0.099");
-                        command(player, "meridian qi set " + player.getScoreboardName() + " 61 all wall 0.099");
-                    });
-                    sentStart = true;
-                } else if (wall() >= 60) {
-                    if (clickBreakthrough(client, module)) {
-                        next(stage == Stage.FAIL_START ? Stage.FAIL_RUNNING : Stage.SUCCESS_RUNNING);
-                    }
-                }
-            }
-            case FAIL_RUNNING -> {
-                if (state.getBreakthroughSeconds() >= 2) {
-                    wallBefore = wall();
-                    send(CultivationInput.Operation.STOP);
-                    next(Stage.FAIL_CHECK);
-                } else if (!state.getBreakthrough() && ticks > 40) {
-                    // 服务端拒绝或中断突破时立即带上原因和关键余额失败，不能无限等待。
-                    throw new IllegalStateException(diagnosis("中断回归的突破没有开始", state));
-                }
-            }
-            case FAIL_CHECK -> {
-                if (!state.getRunning()) {
-                    require(!state.getBreakthrough() && state.getBreakthroughSeconds() == 0, "中断没有清零相变进度");
-                    require(body.getRealm() == Realm.WANDERING_QI && wall() <= wallBefore + 1e-6, "失败退还燃料或错误升境");
-                    next(Stage.RECOVER);
-                    sentStart = false;
-                }
-            }
-            case RECOVER -> {
-                // 自动周天低于80%脑耐力会按规则停机；正式60秒突破前先停下休息，让脑耐力自然恢复。
-                // 休息期间自然扩散会把环上候选摊到其他账户，重启前用 DEPOSIT 阶段同一条正式命令补回候选内腔。
-                if (brainRatio() < .97) {
-                    require(ticks < 4800, "停周天四分钟后脑耐力仍未恢复：" + brainRatio());
-                } else if (!sentStart) {
-                    query(client, player -> command(player, "meridian qi set " + player.getScoreboardName() + " 80 all lumen 0.099"));
-                    sentStart = true;
-                } else {
-                    send(CultivationInput.Operation.START_AUTOMATIC);
-                    next(Stage.SUCCESS_START);
-                    sentStart = false;
-                }
-            }
-            case SUCCESS_RUNNING -> {
-                if (body.getRealm() == Realm.TRUE_QI) {
-                    require(state.getBreakthroughSeconds() == 60, "未保持60秒即升境");
-                    require(body.getMeridianStatesList().stream().flatMap(item -> item.getLumenQi().getEntriesList().stream())
-                            .anyMatch(qi -> qi.getDensity() == .1), "突破没有转换候选密度");
-                    Screenshot.grab(client.gameDirectory, "cultivation-success.png", client.gameRenderer.mainRenderTarget(), 1, ignored -> {});
-                    send(CultivationInput.Operation.STOP);
-                    System.out.println("CULTIVATION_JOURNEY_OK manual/purify/gates/deposit/mobilize/failure/success");
-                    java.nio.file.Files.writeString(client.gameDirectory.toPath().resolve("cultivation-journey-ok.txt"),
-                            "真实单机命令与网络：手动两圈八次冲关、提纯、脾加工、动员、中断不退燃料、60秒相变真炁。");
-                    next(Stage.DONE);
-                } else if (!state.getBreakthrough() && ticks > 40) {
-                    throw new IllegalStateException(diagnosis("真实突破提前停止", state));
-                }
-            }
+            case OPEN -> openPractice();
+            case AUTOMATIC_READY -> startAutomatic(client, module, state);
+            case AUTOMATIC_RUNNING -> awaitAutomatic(client, module, state);
+            case MANUAL -> manual(client, module, state);
+            case RESERVES -> reserves(client, module);
+            case DEPOSIT -> deposit(client, state);
+            case MOBILIZE -> mobilize();
+            case FAIL_START, SUCCESS_START -> awaitBreakthrough(client, module, state);
+            case FAIL_RUNNING -> interruptBreakthrough(state);
+            case FAIL_CHECK -> checkInterruption(state);
+            case RECOVER -> recover(client);
+            case SUCCESS_RUNNING -> completeBreakthrough(client, state);
             default -> { /* 初始化和结束由入口处理。 */ }
         }
-        if (work == null && ticks % 3 == 0) {
-            query(client, player -> {});
+    }
+
+    private void openPractice() {
+        // 打开实际中焦窗口，启动和切换都经过真实组件。
+        InventoryUiClient.runtime().openWorkspace();
+        InventoryUiClient.runtime().open("meridian_ui:practice", null);
+        next(Stage.AUTOMATIC_READY);
+    }
+
+    private void startAutomatic(Minecraft client, BodyUiModule module, CultivationState state) {
+        // 等组件挂载后经真实控件启动，验证读卷已解锁自动周天。
+        if (ticks < VIEW_SETTLE_TICKS || module.practicePanel() == null) {
+            return;
         }
-        return stage == Stage.DONE;
+        require(state.getPracticedGates() == 0, "自动解锁验收必须从零次手动冲关开始");
+        Screenshot.grab(client.gameDirectory, "middle-jiao-unlocked.png",
+                client.gameRenderer.mainRenderTarget(), 1, ignored -> {});
+        clickControl(client, module, "middle-jiao-automatic");
+        clickControl(client, module, "middle-jiao-start");
+        next(Stage.AUTOMATIC_RUNNING);
+    }
+
+    private void awaitAutomatic(Minecraft client, BodyUiModule module, CultivationState state) throws Exception {
+        // 等权威自动状态确认，再检查布局并切回手动。
+        if (ticks < VIEW_SETTLE_TICKS) {
+            return;
+        }
+        require(state.getRunning() && state.getAutomatic(), "读卷后真实复选框未能启动自动中焦");
+        if (!layoutCheck.tick(client, module)) {
+            return;
+        }
+        Screenshot.grab(client.gameDirectory, "middle-jiao-automatic.png",
+                client.gameRenderer.mainRenderTarget(), 1, ignored -> {});
+        automaticCaptured = true;
+        clickControl(client, module, "middle-jiao-automatic");
+        next(Stage.MANUAL);
+    }
+
+    private void manual(Minecraft client, BodyUiModule module, CultivationState state) {
+        // 按权威状态推进手动周天，冲关和截图走真实客户端输入。
+        if (state.getAutomatic()) {
+            return;
+        }
+        if (manualStartLaps < 0) {
+            manualStartLaps = state.getLaps();
+            manualStartGates = state.getPracticedGates();
+            focusScene(client, module);
+            inputs.controlThrust(client.getSingleplayerServer(), client.player.getUUID());
+        }
+        captureMotion(client, state);
+        require(!state.getReason().contains("渗漏"), "真实推力发生非预期损伤");
+        drivePush(client, state);
+        checkGate(client, module, state);
+        int completedLaps = state.getLaps() - manualStartLaps;
+        require(completedLaps < MANUAL_LAP_LIMIT,
+                "手动五圈内未完成冲关或红绿截图：red=" + redCaptured + " green=" + greenCaptured);
+        if (completedLaps >= MANUAL_LAPS
+                && state.getPracticedGates() - manualStartGates >= MANUAL_GATES
+                && redCaptured && greenCaptured) {
+            finishManual(client, module);
+        }
+    }
+
+    private void drivePush(Minecraft client, CultivationState state) {
+        // 起推经真实 G 键输入；服务端确认已松键后才释放本地按键，再开始下一次推力。
+        long releases = inputs.releasedPushes();
+        if (pushHeld && releases > pushReleaseCount) {
+            client.gui.screen().keyReleased(new KeyEvent(GLFW.GLFW_KEY_G, 0, 0));
+            pushHeld = false;
+            pushReleaseCount = releases;
+            return;
+        }
+        if (!pushHeld && state.getThrust() < PUSH_START_THRUST && !state.getPushing()) {
+            pushHeld = client.gui.screen().keyPressed(new KeyEvent(GLFW.GLFW_KEY_G, 0, 0));
+        }
+    }
+
+    private void checkGate(Minecraft client, BodyUiModule module, CultivationState state) {
+        // 截图只认真实红绿像素，命中仍使用服务端窗口与实际空格输入。
+        long retryUntil = state.getGateRetryUntil();
+        boolean exhaling = state.getExhaling();
+        double offsetMillis = body.getSettledAt().getElapsedMillis() - retryUntil;
+        if (retryUntil > 0 && exhaling
+                && Math.abs(offsetMillis) <= GATE_INPUT_WINDOW_MILLIS) {
+            // 截图前确认画面里确实是绿圈；画面尚未变绿时最多等到目标时刻再按，保证仍在服务端窗口内。
+            // 26.2 只能异步回读：同时只留一次回读，确认是绿圈的那一帧在回读完成时原样存档，随后的 tick 再按。
+            if (!greenCaptured && UiChecks.framesRead()) {
+                gateColors(client, module, (colors, image) -> {
+                    if (colors[1] > GATE_CAPTURE_PIXELS) {
+                        UiChecks.save(client, image, "middle-jiao-gate-green.png");
+                        greenCaptured = true;
+                    }
+                });
+            }
+            if (greenCaptured || offsetMillis >= 0) {
+                var strike = new KeyEvent(GLFW.GLFW_KEY_SPACE, 0, 0);
+                client.gui.screen().keyPressed(strike);
+                client.gui.screen().keyReleased(strike);
+            }
+        } else if (!redCaptured && retryUntil > 0 && exhaling
+                && offsetMillis < -(state.getGateWindowMillis() + RED_CAPTURE_LEAD_MILLIS)) {
+            // 红态取呼气中尚未到点的收缩圈，画面必须只有红圈没有绿圈；同样存下参与判定的那一帧。
+            if (UiChecks.framesRead()) {
+                gateColors(client, module, (colors, image) -> {
+                    if (colors[0] > GATE_CAPTURE_PIXELS && colors[1] < GREEN_ABSENCE_PIXELS) {
+                        UiChecks.save(client, image, "middle-jiao-gate-red.png");
+                        redCaptured = true;
+                    }
+                });
+            }
+        }
+    }
+
+    private void finishManual(Minecraft client, BodyUiModule module) {
+        // 手动成果达到原门槛才停下输入，随后经真实按钮停止周天。
+        var transit = body.getTransitsList().stream().filter(QiTransit::hasCircuit).findFirst().orElseThrow();
+        require(transit.getCargo().getEntries(0).getDensity() > INITIAL_DENSITY, "真实周天没有提纯");
+        Screenshot.grab(client.gameDirectory, "cultivation-manual.png",
+                client.gameRenderer.mainRenderTarget(), 1, ignored -> {});
+        inputs.stop();
+        client.gui.screen().keyReleased(new KeyEvent(GLFW.GLFW_KEY_G, 0, 0));
+        clickControl(client, module, "middle-jiao-start");
+        next(Stage.RESERVES);
+        sentStart = false;
+    }
+
+    private void reserves(Minecraft client, BodyUiModule module) throws Exception {
+        // 等外壁操作完成再继续，避免交叉消费。
+        if (reserveJourney.tick(client, module)) {
+            next(Stage.DEPOSIT);
+        }
+    }
+
+    private void deposit(Minecraft client, CultivationState state) {
+        // 观察正式命令备齐条件后的实际外壁入账，再调低内腔。
+        if (state.getRunning()) {
+            return;
+        }
+        double deposited = wall();
+        if (!sentStart) {
+            // 高于90%沉淀线，同时给停周天后重新启动的自然扩散留下预约空间。
+            query(client, player -> command(player,
+                    "meridian qi set " + player.getScoreboardName() + " 1400 all lumen 0.099"));
+            sentStart = true;
+        } else if (deposited > DEPOSIT_MINIMUM) {
+            wallBefore = deposited;
+            query(client, player -> command(player,
+                    "meridian qi set " + player.getScoreboardName() + " 80 all lumen 0.099"));
+            send(CultivationInput.Operation.MOBILIZE_ON);
+            next(Stage.MOBILIZE);
+        }
+    }
+
+    private void mobilize() {
+        // 同时观察外壁提取和脾做功，不能只凭输入已发出判定成功。
+        double fatigue = body.getOrganStatesList().stream().filter(item -> item.getId().equals("spleen"))
+                .findFirst().orElseThrow().getFatigueJoules();
+        if (wall() < wallBefore && fatigue > 0) {
+            send(CultivationInput.Operation.MOBILIZE_OFF);
+            send(CultivationInput.Operation.START_AUTOMATIC);
+            next(Stage.FAIL_START);
+            sentStart = false;
+        }
+    }
+
+    private void awaitBreakthrough(Minecraft client, BodyUiModule module, CultivationState state) throws Exception {
+        // 等周天取得批次和候选后，通过实际按钮开始突破。
+        require(ticks < START_LIMIT_TICKS, diagnosis("周天一分钟内未进入可突破状态", state));
+        if (!state.getRunning() || body.getTransitsList().stream().noneMatch(QiTransit::hasCircuit)) {
+            return;
+        }
+        if (!automaticCaptured && state.getAutomatic()) {
+            Screenshot.grab(client.gameDirectory, "middle-jiao-automatic.png",
+                    client.gameRenderer.mainRenderTarget(), 1, ignored -> {});
+            automaticCaptured = true;
+        }
+        if (!sentStart) {
+            // 动员停下后仍有低密度真元落回部分经脉内腔，把整条经脉稀释到候选密度以下，剩余候选随时序在 50 元上下波动；
+            // 起突破前与外壁一起用正式命令补回候选内腔，两项门槛都由本步备齐。
+            query(client, player -> {
+                command(player, "meridian qi set " + player.getScoreboardName() + " 80 all lumen 0.099");
+                command(player, "meridian qi set " + player.getScoreboardName() + " 61 all wall 0.099");
+            });
+            sentStart = true;
+        } else if (wall() >= STARTING_WALL_QI) {
+            if (clickBreakthrough(client, module)) {
+                next(stage == Stage.FAIL_START ? Stage.FAIL_RUNNING : Stage.SUCCESS_RUNNING);
+            }
+        }
+    }
+
+    private void interruptBreakthrough(CultivationState state) {
+        // 突破真实运行后主动停止，后续回执检查中断费用。
+        if (state.getBreakthroughSeconds() >= INTERRUPT_AFTER_SECONDS) {
+            wallBefore = wall();
+            send(CultivationInput.Operation.STOP);
+            next(Stage.FAIL_CHECK);
+        } else if (!state.getBreakthrough() && ticks > START_CONFIRM_TICKS) {
+            // 服务端拒绝或中断突破时立即带上原因和关键余额失败，不能无限等待。
+            throw new IllegalStateException(diagnosis("中断回归的突破没有开始", state));
+        }
+    }
+
+    private void checkInterruption(CultivationState state) {
+        // 停机回执必须清零突破进度，且不能退还已消耗的燃料。
+        if (!state.getRunning()) {
+            require(!state.getBreakthrough() && state.getBreakthroughSeconds() == 0, "中断没有清零相变进度");
+            require(body.getRealm() == Realm.WANDERING_QI && wall() <= wallBefore + FUEL_TOLERANCE,
+                    "失败退还燃料或错误升境");
+            next(Stage.RECOVER);
+            sentStart = false;
+        }
+    }
+
+    private void recover(Minecraft client) {
+        // 等待脑耐力自然恢复并补回候选，再启动连续突破。
+        // 自动周天低于80%脑耐力会按规则停机；正式60秒突破前先停下休息，让脑耐力自然恢复。
+        // 休息期间自然扩散会把环上候选摊到其他账户，重启前用正式命令补回候选内腔。
+        double stamina = brainRatio();
+        if (stamina < RECOVERED_BRAIN_RATIO) {
+            require(ticks < RECOVERY_LIMIT_TICKS, "停周天四分钟后脑耐力仍未恢复：" + stamina);
+        } else if (!sentStart) {
+            query(client, player -> command(player,
+                    "meridian qi set " + player.getScoreboardName() + " 80 all lumen 0.099"));
+            sentStart = true;
+        } else {
+            send(CultivationInput.Operation.START_AUTOMATIC);
+            next(Stage.SUCCESS_START);
+            sentStart = false;
+        }
+    }
+
+    private void completeBreakthrough(Minecraft client, CultivationState state) throws Exception {
+        // 升境、连续时间和相变同时成立，才写成功标记。
+        if (body.getRealm() == Realm.TRUE_QI) {
+            require(state.getBreakthroughSeconds() == BREAKTHROUGH_SECONDS, "未保持60秒即升境");
+            require(body.getMeridianStatesList().stream().flatMap(item -> item.getLumenQi().getEntriesList().stream())
+                    .anyMatch(qi -> qi.getDensity() == GAS_DENSITY), "突破没有转换候选密度");
+            Screenshot.grab(client.gameDirectory, "cultivation-success.png",
+                    client.gameRenderer.mainRenderTarget(), 1, ignored -> {});
+            send(CultivationInput.Operation.STOP);
+            System.out.println("CULTIVATION_JOURNEY_OK manual/purify/gates/deposit/mobilize/failure/success");
+            java.nio.file.Files.writeString(client.gameDirectory.toPath().resolve("cultivation-journey-ok.txt"),
+                    "真实单机命令与网络：手动两圈八次冲关、提纯、脾加工、动员、中断不退燃料、60秒相变真炁。");
+            next(Stage.DONE);
+        } else if (!state.getBreakthrough() && ticks > START_CONFIRM_TICKS) {
+            throw new IllegalStateException(diagnosis("真实突破提前停止", state));
+        }
     }
 
     private void captureMotion(Minecraft client, CultivationState state) {
