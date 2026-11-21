@@ -104,6 +104,7 @@ public final class HumanOpeningSmoke implements ClientModInitializer {
             client.options.guiScale().set(2);
             client.resizeGui();
             module.present(initial, Identifier.fromNamespaceAndPath("meridian_human", "meridian/adult.pb"));
+            InventoryUiClient.runtime().uiVersion(dev.kizuna.inventoryui.workspace.UiVersion.CLASSIC);
             InventoryUiClient.runtime().openWorkspace();
             InventoryUiClient.runtime().open("meridian_ui:meridians", null);
         }

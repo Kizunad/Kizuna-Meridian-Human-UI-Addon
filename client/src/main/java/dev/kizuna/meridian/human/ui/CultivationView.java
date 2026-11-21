@@ -84,7 +84,13 @@ final class CultivationView {
         }).toList();
     }
 
-    private static Batch batch(QiTransit transit) {
+    static QiTransit transit(BodySnapshot snapshot) {
+        // 中焦进度只对应此周天批次，其余运输不计入；小窗摘要按同一条件取。
+        return snapshot.getTransitsList().stream().filter(item -> item.getId().equals("human-middle-jiao"))
+                .findFirst().orElse(null);
+    }
+
+    static Batch batch(QiTransit transit) {
         // 周天只汇总在途批次，外壁账户由独立储备窗口读取。
         double amount = 0;
         double density = INITIAL_DENSITY;

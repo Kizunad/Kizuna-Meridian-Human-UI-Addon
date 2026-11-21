@@ -42,6 +42,30 @@ final class HumanVitalityPresentation {
                 .withStyle(style -> style.withHoverEvent(new HoverEvent.ShowText(Component.literal(hover))));
     }
 
+    static List<Component> narrowLines(BodySnapshot body) {
+        // 窄窗口里境界、年龄、寿元各占一行，数值不会被折开；悬浮说明和宽版相同。
+        String hover = REALM_HOVER;
+        if (body.getRealm() == Realm.WANDERING_QI) {
+            hover += WANDERING_HOVER;
+        }
+        var vitality = body.getVitality();
+        double remainingSeconds = Math.max(0, vitality.getLifespanLimitSeconds()
+                - vitality.getAgeSeconds() - vitality.getSpentLifespanSeconds());
+        String realm = REALM_PREFIX + REALMS.getOrDefault(body.getRealm(), "未知");
+        String age = String.format(Locale.ROOT, "年龄 %.1f 年", vitality.getAgeSeconds() / SECONDS_PER_YEAR);
+        String lifespan = String.format(Locale.ROOT, "寿元 %.1f 年", remainingSeconds / SECONDS_PER_YEAR);
+        return List.of(hovering(realm, hover), hovering(age, LIFESPAN_HOVER), hovering(lifespan, LIFESPAN_HOVER));
+    }
+
+    static String compact(BodySnapshot body) {
+        // 概况一行：境界、年龄和剩余寿元，换算和上面的摘要相同。
+        var vitality = body.getVitality();
+        double remainingSeconds = Math.max(0, vitality.getLifespanLimitSeconds()
+                - vitality.getAgeSeconds() - vitality.getSpentLifespanSeconds());
+        return String.format(Locale.ROOT, "%s · %.1f/%.1f 年", REALMS.getOrDefault(body.getRealm(), "未知"),
+                vitality.getAgeSeconds() / SECONDS_PER_YEAR, remainingSeconds / SECONDS_PER_YEAR);
+    }
+
     static String summary(BodySnapshot body) {
         // 已支出寿元独立于自然年龄，余额为零时仍显示非负数。
         var vitality = body.getVitality();

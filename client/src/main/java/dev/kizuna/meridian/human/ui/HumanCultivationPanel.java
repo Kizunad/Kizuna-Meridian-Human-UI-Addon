@@ -2,12 +2,16 @@ package dev.kizuna.meridian.human.ui;
 
 import dev.kizuna.meridian.protocol.pb.BodyMessages.BodySnapshot;
 import dev.kizuna.meridian.ui.api.MeridianSceneExtension;
+import dev.kizuna.meridian.ui.api.InspectionSection;
+import dev.kizuna.inventoryui.client.CompactProvider;
+import java.util.function.Supplier;
 import dev.kizuna.meridian.ui.api.MeridianAction;
 import dev.kizuna.meridian.human.pb.CultivationMessages.CultivationInput.Operation;
 import dev.kizuna.meridian.progression.client.ClientProgression;
 import dev.kizuna.meridian.burden.fabric.client.BurdenClient;
 import java.util.ArrayList;
 import java.util.List;
+import java.util.Locale;
 import net.minecraft.client.Minecraft;
 import net.minecraft.resources.Identifier;
 import dev.kizuna.meridian.ui.client.BodyCanvas;
@@ -15,6 +19,7 @@ import dev.kizuna.meridian.ui.client.BodyScene;
 
 /** 人体中焦周天入口；场景和图像控件共用服务端身体快照。 */
 public final class HumanCultivationPanel implements MeridianSceneExtension {
+    private static final double GRAMS_PER_KG = 1000;
     @Override
     public String title() {
         // 生物玩法名称由人体附属提供。
@@ -37,9 +42,68 @@ public final class HumanCultivationPanel implements MeridianSceneExtension {
     }
 
     @Override
+    public List<String> inspectionLayers(InspectionSection section) {
+        // 图层名属于人体模型，通用检视页按返回的顺序生成开关。
+        return switch (section) {
+            // 体表初始只开体表，保留旧检视的叠层勾选，用于观察骨架及内部的相对位置。
+            case SURFACE -> List.of("surface", "skeleton", "muscles", "organs", "meridians");
+            case MUSCLES -> List.of("muscles");
+            case ORGANS -> List.of("organs");
+        };
+    }
+
+    @Override
+    public List<String> inspectionRows(InspectionSection section, BodySnapshot body) {
+        // 展开页从同一身体快照按构型列出所有部位。
+        if (section == InspectionSection.SURFACE) {
+            var parts = HumanInspection.parts(body);
+            var rows = new ArrayList<>(parts.stream().filter(HumanInspection.Part::wounded)
+                    .map(p -> p.name() + " " + HumanInspection.number(p.hp()) + "/"
+                            + HumanInspection.number(p.limit())).toList());
+            long healthy = parts.stream().filter(p -> !p.wounded()).count();
+            rows.add("其余" + healthy + "处无伤");
+            return List.copyOf(rows);
+        }
+        return HumanInspection.rows(section, body);
+    }
+
+    @Override
+    public String overviewLine(BodySnapshot body) {
+        // 负重独立同步，首份读数到达前保留明确的等待提示。
+        String burden = BurdenClient.reading().map(view -> {
+            if (!view.available()) {
+                return "负重未知";
+            }
+            return String.format(Locale.ROOT, "负重 %.1f kg", view.effectiveGrams() / GRAMS_PER_KG);
+        }).orElse(HumanBurdenLine.WAITING);
+        return HumanVitalityPresentation.compact(body) + " · " + burden;
+    }
+
+    @Override
+    public CompactProvider compactBody(InspectionSection section, Supplier<BodySnapshot> snapshot) {
+        // 读取活动连接的身体提供者，绘制时不发送意图。
+        return HumanCompactViews.body(section, snapshot);
+    }
+
+    @Override
+    public CompactProvider compactPractice(Supplier<BodySnapshot> snapshot) {
+        // 后台观察中焦时不创建带输入的练习场景。
+        return HumanCompactViews.practice(snapshot);
+    }
+
+    @Override
     public String meridianGuide() {
         // 开脉规则是人体的，通用经脉窗口只负责显示。
         return HumanOpeningGuide.TEXT;
+    }
+
+    @Override
+    public List<net.minecraft.network.chat.Component> surfaceSummaryLines(BodySnapshot body) {
+        // 新版体表窗口：境界、年龄、寿元各一行，后面接的负重和伤势两行和宽版相同。
+        var lines = new ArrayList<>(HumanVitalityPresentation.narrowLines(body));
+        var wide = bodySummaryLines(body);
+        lines.addAll(wide.subList(HumanVitalityPresentation.lines(body).size(), wide.size()));
+        return List.copyOf(lines);
     }
 
     @Override
