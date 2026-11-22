@@ -32,6 +32,8 @@ dependencies {
     testImplementation 'dev.kizuna.meridian.human:server'
     // 单元测试直接使用 UI 的路线类型，测试类路径单独补上同一份 JAR。
     testImplementation 'dev.kizuna.meridian.ui:client'
+    // 小窗摘要的用例要用界面框架的小窗样式和主题令牌。
+    testImplementation 'dev.kizuna.inventoryui:kizuna-inventory-ui-framework'
     testImplementation('dev.kizuna.meridian.burden:fabric') { transitive = false }
 }
 

@@ -2,6 +2,7 @@
   "meridian_human_ui.compact.body_doll": "人形",
   "meridian_human_ui.compact.body_table": "全表",
   "meridian_human_ui.compact.muscles": "疲劳",
-  "meridian_human_ui.compact.organs": "器官",
+  "meridian_human_ui.compact.organs_active": "有活动的",
+  "meridian_human_ui.compact.organs_all": "全部",
   "meridian_human_ui.compact.practice": "中焦"
 }

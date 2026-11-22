@@ -58,12 +58,14 @@ final class HumanVitalityPresentation {
     }
 
     static String compact(BodySnapshot body) {
-        // 概况一行：境界、年龄和剩余寿元，换算和上面的摘要相同。
+        // 概况一行：境界、年龄和剩余寿元，换算和上面的摘要相同；只写整年，不满一年的零头舍去。
         var vitality = body.getVitality();
         double remainingSeconds = Math.max(0, vitality.getLifespanLimitSeconds()
                 - vitality.getAgeSeconds() - vitality.getSpentLifespanSeconds());
-        return String.format(Locale.ROOT, "%s · %.1f/%.1f 年", REALMS.getOrDefault(body.getRealm(), "未知"),
-                vitality.getAgeSeconds() / SECONDS_PER_YEAR, remainingSeconds / SECONDS_PER_YEAR);
+        long age = (long) Math.floor(vitality.getAgeSeconds() / SECONDS_PER_YEAR);
+        long remaining = (long) Math.floor(remainingSeconds / SECONDS_PER_YEAR);
+        return String.format(Locale.ROOT, "%s · %d/%d 年", REALMS.getOrDefault(body.getRealm(), "未知"), age,
+                remaining);
     }
 
     static String summary(BodySnapshot body) {

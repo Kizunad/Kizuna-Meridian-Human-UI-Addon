@@ -8,10 +8,13 @@ import java.util.function.Supplier;
 import dev.kizuna.meridian.ui.api.MeridianAction;
 import dev.kizuna.meridian.human.pb.CultivationMessages.CultivationInput.Operation;
 import dev.kizuna.meridian.progression.client.ClientProgression;
+import dev.kizuna.meridian.burden.fabric.BurdenReadout;
+import dev.kizuna.meridian.burden.fabric.BurdenView;
 import dev.kizuna.meridian.burden.fabric.client.BurdenClient;
+import dev.kizuna.meridian.ui.client.CompactNumbers;
 import java.util.ArrayList;
 import java.util.List;
-import java.util.Locale;
+import java.util.Optional;
 import net.minecraft.client.Minecraft;
 import net.minecraft.resources.Identifier;
 import dev.kizuna.meridian.ui.client.BodyCanvas;
@@ -69,14 +72,19 @@ public final class HumanCultivationPanel implements MeridianSceneExtension {
 
     @Override
     public String overviewLine(BodySnapshot body) {
-        // 负重独立同步，首份读数到达前保留明确的等待提示。
-        String burden = BurdenClient.reading().map(view -> {
-            if (!view.available()) {
-                return "负重未知";
-            }
-            return String.format(Locale.ROOT, "负重 %.1f kg", view.effectiveGrams() / GRAMS_PER_KG);
-        }).orElse(HumanBurdenLine.WAITING);
-        return HumanVitalityPresentation.compact(body) + " · " + burden;
+        return HumanVitalityPresentation.compact(body) + " · " + burdenReading(BurdenClient.reading());
+    }
+
+    static String burdenReading(Optional<BurdenView> reading) {
+        // 负重独立同步：第一份读数到达前写「待同步」，算不出时写「未知」，都不显示成 0。
+        if (reading.isEmpty()) {
+            return "负 待同步";
+        }
+        if (!reading.get().available()) {
+            return "负 未知";
+        }
+        String load = CompactNumbers.whole(reading.get().effectiveGrams() / GRAMS_PER_KG);
+        return "负 " + load + "/" + CompactNumbers.whole(BurdenReadout.limitKilograms(reading.get()));
     }
 
     @Override
