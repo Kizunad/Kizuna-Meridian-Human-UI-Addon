@@ -2,6 +2,7 @@ package dev.kizuna.meridian.human.ui.smoke;
 
 import dev.kizuna.inventoryui.client.InventoryUiClient;
 import dev.kizuna.meridian.human.fabric.HumanHealthHost;
+import dev.kizuna.meridian.human.protocol.HumanProgressionProtocol;
 import dev.kizuna.meridian.progression.ProgressionProtocol;
 import dev.kizuna.meridian.progression.client.ClientProgression;
 import dev.kizuna.meridian.progression.client.ScrollScreen;
@@ -194,7 +195,8 @@ final class ProgressionJourney {
                 server(client, player -> {
                     require(ProgressionFabric.canCultivate(player), "客户端解锁未写身体");
                     BodySnapshot snapshot = inspect(player);
-                    require(snapshot.getAddonProgressMap().containsKey(ProgressionProtocol.PROGRESS_KEY), "身体未保存进度");
+                    require(snapshot.getAddonProgressMap().containsKey(
+                            HumanProgressionProtocol.PROGRESS_KEY), "身体未保存进度");
                     command(player, "meridian qi fill");
                 });
                 require(!ClientProgression.canGather() && !ClientProgression.canUseMiddleJiao(), "札记错误代解锁两卷");
