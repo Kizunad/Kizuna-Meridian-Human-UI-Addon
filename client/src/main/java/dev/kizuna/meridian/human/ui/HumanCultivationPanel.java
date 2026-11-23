@@ -3,6 +3,7 @@ package dev.kizuna.meridian.human.ui;
 import dev.kizuna.meridian.protocol.pb.BodyMessages.BodySnapshot;
 import dev.kizuna.meridian.ui.api.MeridianSceneExtension;
 import dev.kizuna.meridian.ui.api.InspectionSection;
+import dev.kizuna.meridian.ui.api.SurfaceReadout;
 import dev.kizuna.inventoryui.client.CompactProvider;
 import java.util.function.Supplier;
 import dev.kizuna.meridian.ui.api.MeridianAction;
@@ -97,6 +98,12 @@ public final class HumanCultivationPanel implements MeridianSceneExtension {
     public CompactProvider compactPractice(Supplier<BodySnapshot> snapshot) {
         // 后台观察中焦时不创建带输入的练习场景。
         return HumanCompactViews.practice(snapshot);
+    }
+
+    @Override
+    public SurfaceReadout surfaceReadout(BodySnapshot body) {
+        // 新版体表窗口的正文和体表小窗读同一份部位表。
+        return HumanSurfaceReadout.of(body);
     }
 
     @Override

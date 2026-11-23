@@ -67,7 +67,10 @@ final class HumanCompactViews {
             new Limb("右臂", List.of("right_upper_arm", "right_forearm", "right_hand")),
             new Limb("左腿", List.of("left_thigh", "left_lower_leg", "left_foot")),
             new Limb("右腿", List.of("right_thigh", "right_lower_leg", "right_foot")));
-    private static final int MARK_OUTLINE = 0x8C000000;
+    /** 人形的格子占的范围：左右各留出三像素，脚底到 54。 */
+    static final int FIGURE_WIDTH = 26;
+    static final int FIGURE_HEIGHT = 54;
+    static final int MARK_OUTLINE = 0x8C000000;
     private static final int DOLL_TOP = 1;
     private static final int LIST_LEFT = 32;
     private static final int LISTED_WOUNDS = LIST_LINES - 1;
@@ -116,7 +119,7 @@ final class HumanCompactViews {
         return parts.stream().collect(Collectors.toMap(HumanInspection.Part::id, part -> part));
     }
 
-    private static String shortName(HumanInspection.Part part) {
+    static String shortName(HumanInspection.Part part) {
         // 躯干用单字，四肢的部位沿用构型里的名字。
         return TRUNK.stream()
                 .filter(trunk -> trunk.part().equals(part.id()))
@@ -125,7 +128,7 @@ final class HumanCompactViews {
                 .orElse(part.name());
     }
 
-    private static String reading(HumanInspection.Part part) {
+    static String reading(HumanInspection.Part part) {
         if (part.wounded()) {
             return CompactNumbers.floored(part.hp());
         }
@@ -133,27 +136,37 @@ final class HumanCompactViews {
     }
 
     static void doll(SummaryCanvas canvas, List<HumanInspection.Part> parts) {
-        // 先铺所有格子的深色描边，再按伤势上色，相邻格子的描边不会盖住颜色。
-        var byId = byId(parts);
-        var known = MARKS.stream().filter(mark -> byId.containsKey(mark.part())).toList();
-        for (Mark mark : known) {
-            int top = DOLL_TOP + mark.y();
-            canvas.fill(mark.x() - 1, top - 1, mark.x() + mark.width() + 1, top + mark.height() + 1, MARK_OUTLINE);
-        }
-        for (Mark mark : known) {
-            int top = DOLL_TOP + mark.y();
-            int color = HumanWound.of(byId.get(mark.part())).mark;
-            canvas.fill(mark.x(), top, mark.x() + mark.width(), top + mark.height(), color);
-        }
+        marks(canvas, DOLL_TOP, parts);
         woundList(canvas, parts);
+    }
+
+    /** 人形的格子，最上面一格的上沿在 top；每格外有一像素深色描边，相邻两格之间因此有一道分隔线。 */
+    static void marks(SummaryCanvas canvas, int top, List<HumanInspection.Part> parts) {
+        // 从大格画到小格，每格先描边再上色：分隔线落在大的那一格上，脖子和手这样的小格颜色完整。
+        var byId = byId(parts);
+        var known = MARKS.stream()
+                .filter(mark -> byId.containsKey(mark.part()))
+                .sorted(Comparator.comparingInt((Mark mark) -> mark.width() * mark.height()).reversed())
+                .toList();
+        for (Mark mark : known) {
+            int y = top + mark.y();
+            canvas.fill(mark.x() - 1, y - 1, mark.x() + mark.width() + 1, y + mark.height() + 1, MARK_OUTLINE);
+            int color = HumanWound.of(byId.get(mark.part())).mark;
+            canvas.fill(mark.x(), y, mark.x() + mark.width(), y + mark.height(), color);
+        }
+    }
+
+    /** 受伤的部位，剩得少的排前面。 */
+    static List<HumanInspection.Part> wounds(List<HumanInspection.Part> parts) {
+        return parts.stream()
+                .filter(HumanInspection.Part::wounded)
+                .sorted(Comparator.comparingDouble(part -> part.hp() / part.limit()))
+                .toList();
     }
 
     private static void woundList(SummaryCanvas canvas, List<HumanInspection.Part> parts) {
         // 伤得重的排前面，最多列五处；最后一行交代剩下的。
-        var wounds = parts.stream()
-                .filter(HumanInspection.Part::wounded)
-                .sorted(Comparator.comparingDouble(part -> part.hp() / part.limit()))
-                .toList();
+        var wounds = wounds(parts);
         if (wounds.isEmpty()) {
             CompactSummary.left(canvas, LIST_LEFT, 0, List.of(dim(canvas, "全身无伤")));
             return;

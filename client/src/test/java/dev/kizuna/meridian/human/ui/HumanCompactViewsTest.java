@@ -28,20 +28,24 @@ import static org.junit.Assert.assertTrue;
 public class HumanCompactViewsTest {
     private static final List<String> SIDES = List.of("left", "right");
     private static final List<String> SIDE_NAMES = List.of("左", "右");
-    private static final double CHEST_LIMIT = 32;
+    static final double CHEST_LIMIT = 32;
     private static final double FOREARM_LIMIT = 12;
     private static final double LOWER_LEG_LIMIT = 18;
     private static final int PARTS = 17;
     private static final double REFERENCE_KG = 70;
     private static final double OVERLOAD = 4.2;
     private static final double LARGE = 9999;
+    private static final int HEALTHY = HumanWound.NONE.mark;
+    private static final SummaryProbe.Block NECK = new SummaryProbe.Block(11, 8, 15, 10, HEALTHY);
+    private static final SummaryProbe.Block LEFT_HAND = new SummaryProbe.Block(3, 27, 7, 30, HEALTHY);
+    private static final SummaryProbe.Block RIGHT_HAND = new SummaryProbe.Block(19, 27, 23, 30, HEALTHY);
 
     private static HumanInspection.Part part(String id, String name, double limit) {
         return new HumanInspection.Part(id, name, limit, limit);
     }
 
     /** 人体构型的十七个部位，全部无伤。 */
-    private static List<HumanInspection.Part> healthy() {
+    static List<HumanInspection.Part> healthy() {
         var parts = new ArrayList<>(List.of(part("head", "头部", 20), part("neck", "颈部", 10),
                 part("chest", "胸部", CHEST_LIMIT), part("abdomen", "腹部", 30), part("pelvis", "骨盆", 30)));
         for (int side = 0; side < SIDES.size(); side++) {
@@ -57,7 +61,7 @@ public class HumanCompactViewsTest {
         return parts;
     }
 
-    private static List<HumanInspection.Part> hurt(List<HumanInspection.Part> parts, String id, double hp) {
+    static List<HumanInspection.Part> hurt(List<HumanInspection.Part> parts, String id, double hp) {
         return parts.stream().map(part -> {
             if (part.id().equals(id)) {
                 return new HumanInspection.Part(part.id(), part.name(), hp, part.limit());
@@ -67,7 +71,7 @@ public class HumanCompactViewsTest {
     }
 
     /** 三档伤势各一处：胸轻伤、右小腿中等、左前臂重伤。 */
-    private static List<HumanInspection.Part> designWounds() {
+    static List<HumanInspection.Part> designWounds() {
         var parts = hurt(healthy(), "chest", CHEST_LIMIT - 1);
         parts = hurt(parts, "right_lower_leg", LOWER_LEG_LIMIT / 2);
         return hurt(parts, "left_forearm", FOREARM_LIMIT / 4);
@@ -77,14 +81,43 @@ public class HumanCompactViewsTest {
         assertEquals(variant.id(), List.of(), probe.problems(variant));
     }
 
+    /** 人形里上了色的格子，不含描边。 */
+    static List<SummaryProbe.Block> fills(SummaryProbe probe) {
+        return probe.blocks().stream().filter(block -> block.color() != HumanCompactViews.MARK_OUTLINE).toList();
+    }
+
+    private static boolean overlap(SummaryProbe.Block a, SummaryProbe.Block b) {
+        return a.left() < b.right() && b.left() < a.right() && a.top() < b.bottom() && b.top() < a.bottom();
+    }
+
+    @Test
+    public void smallCellsKeepTheirWholeColourAndNeighboursGetADividingLine() {
+        // 脖子、手这样的小格画在后面，不被别的格子的描边盖住；它们的描边在相邻的大格上留下分隔线。
+        var probe = SummaryProbe.reference();
+        HumanCompactViews.marks(probe, 0, healthy());
+        var blocks = probe.blocks();
+        for (var small : List.of(NECK, LEFT_HAND, RIGHT_HAND)) {
+            int painted = blocks.indexOf(small);
+            assertTrue("没画出这一格 " + small, painted > 0);
+            var later = blocks.subList(painted + 1, blocks.size());
+            assertTrue("小格被后画的盖住 " + small, later.stream().noneMatch(block -> overlap(block, small)));
+            var outline = blocks.get(painted - 1);
+            assertEquals(HumanCompactViews.MARK_OUTLINE, outline.color());
+            var earlier = blocks.subList(0, painted - 1);
+            assertTrue("小格的描边没落在相邻的格子上 " + small,
+                    earlier.stream().anyMatch(block -> block.color() == HEALTHY && overlap(block, outline)));
+        }
+    }
+
     @Test
     public void dollListsWoundsWorstFirstAndColoursThreeLevels() {
         var probe = SummaryProbe.reference();
         HumanCompactViews.doll(probe, designWounds());
         assertEquals(List.of("左前臂 3", "右小腿 9", "胸 31", "余十四处无伤"), probe.lines());
         assertClean(probe, HumanCompactViews.DOLL);
-        var fills = probe.blocks().subList(PARTS, PARTS * 2);
-        assertEquals("每个部位一格", PARTS * 2, probe.blocks().size());
+        var fills = fills(probe);
+        assertEquals("每个部位一格", PARTS, fills.size());
+        assertEquals("每格一圈描边", PARTS * 2, probe.blocks().size());
         assertEquals(1, fills.stream().filter(block -> block.color() == HumanWound.LIGHT.mark).count());
         assertEquals(1, fills.stream().filter(block -> block.color() == HumanWound.MEDIUM.mark).count());
         assertEquals(1, fills.stream().filter(block -> block.color() == HumanWound.SEVERE.mark).count());
