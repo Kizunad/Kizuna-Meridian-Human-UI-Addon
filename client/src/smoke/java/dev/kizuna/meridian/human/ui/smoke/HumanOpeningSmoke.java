@@ -89,6 +89,8 @@ public final class HumanOpeningSmoke implements ClientModInitializer {
             }
             module = FabricLoader.getInstance().getEntrypoints("kizuna_inventory_ui", ClientModule.class).stream()
                     .filter(BodyUiModule.class::isInstance).map(BodyUiModule.class::cast).findFirst().orElseThrow();
+            // 这套冒烟验的是旧版界面：缺省是新版，一开始就切过去，后面每一段流程都在旧版里跑。
+            InventoryUiClient.runtime().uiVersion(dev.kizuna.inventoryui.workspace.UiVersion.CLASSIC);
         }
         if (module == null) {
             return;
@@ -104,7 +106,6 @@ public final class HumanOpeningSmoke implements ClientModInitializer {
             client.options.guiScale().set(2);
             client.resizeGui();
             module.present(initial, Identifier.fromNamespaceAndPath("meridian_human", "meridian/adult.pb"));
-            InventoryUiClient.runtime().uiVersion(dev.kizuna.inventoryui.workspace.UiVersion.CLASSIC);
             InventoryUiClient.runtime().openWorkspace();
             InventoryUiClient.runtime().open("meridian_ui:meridians", null);
         }
