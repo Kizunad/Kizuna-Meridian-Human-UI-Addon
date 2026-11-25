@@ -3,7 +3,13 @@
   "id": "meridian_human_ui",
   "version": "${version}",
   "name": "Kizuna's Meridian Human UI Addon",
-  "description": "人体周天光迹与内观表现",
+  "contact": {
+    "homepage": "https://github.com/Kizunad/Kizuna-Meridian-Human-UI-Addon",
+    "sources": "https://github.com/Kizunad/Kizuna-Meridian-Human-UI-Addon",
+    "issues": "https://github.com/Kizunad/Kizuna-Meridian-Human-UI-Addon/issues"
+  },
+  "icon": "assets/meridian_human_ui/icon.png",
+  "description": "Shows qi circulating through the human body during inner observation.\n内观时可以看到炁沿人体经脉周天流转的轨迹。",
   "authors": ["Kizunad"],
   "license": "PolyForm-Noncommercial-1.0.0",
   "environment": "client",
@@ -18,8 +24,8 @@
     "minecraft": "26.2",
     "fabricloader": ">=0.20.1",
     "meridian_framework": "*",
-    "meridian_human": "0.1.0-SNAPSHOT",
-    "meridian_ui": "0.1.0-SNAPSHOT",
+    "meridian_human": "0.1.0",
+    "meridian_ui": "0.1.0",
     "meridian_progression_client": "*",
     "meridian_burden": "*",
     "meridian_vanilla_healing": "*"
