@@ -37,7 +37,12 @@ dependencies {
     testImplementation('dev.kizuna.meridian.burden:fabric') { transitive = false }
 }
 
-test { useJUnit() }
+test {
+    useJUnit()
+    workingDir layout.buildDirectory.dir('test-runtime')
+    doFirst { workingDir.mkdirs() }
+}
+
 processResources {
     inputs.property 'version', project.version
     def preserveJsonEscapes = true
